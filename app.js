@@ -521,7 +521,7 @@ function renderDraft(){
   const renderTab=tab=>{
     document.querySelectorAll('#draftTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
     if(tab==='steals'){
-      const bestFranchises=profiles.slice(0,12).map((x,i)=>`<tr><td>${i+1}</td><td>${displayFranchise(x.TeamID,x.Team,x.Manager)}</td><td>${x.GradedPicks}</td><td class="${valueTone(x.AvgValue)}"><strong>${signed(x.AvgValue)}</strong></td><td>${fmt(x.StealRate*100,1)}%</td><td>${x.AClasses}</td></tr>`);
+      const bestFranchises=profiles.map((x,i)=>`<tr><td>${i+1}</td><td>${displayFranchise(x.TeamID,x.Team,x.Manager)}</td><td>${x.GradedPicks}</td><td class="${valueTone(x.AvgValue)}"><strong>${signed(x.AvgValue)}</strong></td><td>${fmt(x.StealRate*100,1)}%</td><td>${x.AClasses}</td></tr>`);
       panel.innerHTML=`<div class="grid-2"><div class="card"><h2>Biggest Steals</h2>${table(['#','Player','Actual','Expected','Value','Franchise'],stealRows)}</div><div class="card"><h2>Biggest Slot-Value Busts</h2>${table(['#','Player','Actual','Expected','Value','Franchise'],bustRows)}</div></div><div class="card section-gap"><h2>Best Drafting Franchises by Average Pick Value</h2><p class="muted">Uses all graded picks across the franchise's history.</p>${table(['#','Franchise / Manager','Graded Picks','Avg Value / Pick','Steal %','A Classes'],bestFranchises)}</div>`;
     }
     if(tab==='board'){
