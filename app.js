@@ -8,6 +8,9 @@ const fmt = (n,d=0) => n==null?'—':Number(n).toLocaleString(undefined,{minimum
 const pct = n => n==null?'—':(Number(n)*100).toFixed(1)+'%';
 const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ownerLabel = o => o || 'Unknown';
+const signed = (n,d=1) => n==null?'—':`${Number(n)>=0?'+':''}${Number(n).toFixed(d)}`;
+const valueTone = n => n==null?'':Number(n)>=35?'good':Number(n)<=-35?'bad':'';
+const gradeTone = g => String(g||'').startsWith('A')?'good':String(g||'').startsWith('F')||String(g||'').startsWith('D')?'bad':String(g||'').startsWith('C')?'warn':'';
 
 function metric(label,value,detail=''){
   return `<div class="metric"><small>${esc(label)}</small><strong>${esc(value)}</strong>${detail?`<span class="muted">${esc(detail)}</span>`:''}</div>`;
@@ -48,8 +51,8 @@ function renderHome(){
 }
 
 async function renderLive(){
-  setHeader('Live 2026','Current ESPN matchup scores auto-refresh every 30 seconds.');
-  $('#content').innerHTML=`<div class="hero"><h2>Live Scoreboard</h2><p>Your ESPN authentication stays on the server. The browser never receives <code>espn_s2</code> or <code>SWID</code>.</p></div><div id="liveArea" class="empty">Connecting to ESPN…</div>`;
+  setHeader('Live 2026','Current standings, rosters, matchups, transactions and injuries from ESPN.');
+  $('#content').innerHTML=`<div class="hero"><h2>Live League Command Center</h2><p>The browser only calls your Vercel server function. ESPN credentials remain server-side and are never returned to visitors.</p></div><div id="liveArea" class="empty">Connecting to ESPN…</div>`;
   await refreshLive();
   clearInterval(liveTimer); liveTimer=setInterval(refreshLive,30000);
 }
@@ -59,17 +62,41 @@ async function refreshLive(){
     const d=await r.json();
     if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
     setStatus(`Live • Week ${d.currentWeek||'—'}`,'good');
-    const cards=(d.matchups||[]).map(m=>`<div class="matchup-card">
+    const matchupCards=(d.matchups||[]).map(m=>`<div class="matchup-card">
       <div class="teamrow"><span><strong>${esc(m.awayTeam||'TBD')}</strong><br><small class="muted">${esc(m.awayOwner||'')}</small></span><strong>${fmt(m.awayScore,2)}</strong></div>
       <div class="teamrow"><span><strong>${esc(m.homeTeam||'TBD')}</strong><br><small class="muted">${esc(m.homeOwner||'')}</small></span><strong>${fmt(m.homeScore,2)}</strong></div>
-      <div class="matchup-meta">Week ${esc(m.week)} • ESPN live data • Updated ${new Date(d.updatedAt).toLocaleTimeString()}</div>
+      <div class="matchup-meta">Week ${esc(m.week)} • Updated ${new Date(d.updatedAt).toLocaleTimeString()}</div>
     </div>`).join('');
-    $('#liveArea').className='scoreboard';
-    $('#liveArea').innerHTML=cards||`<div class="empty">No current-week matchups returned yet.</div>`;
+    const standingRows=(d.standings||[]).map((x,i)=>`<tr><td>${i+1}</td><td><strong>${esc(x.team)}</strong><br><span class="muted">${esc(x.owner||'')}</span></td><td>${x.wins}-${x.losses}-${x.ties}</td><td>${fmt(x.pointsFor,1)}</td><td>${fmt(x.pointsAgainst,1)}</td><td>${fmt(x.powerScore,1)}</td></tr>`);
+    const injuryRows=(d.injuries||[]).slice(0,40).map(x=>`<tr><td><strong>${esc(x.player)}</strong></td><td>${esc(x.position||'')}</td><td>${esc(x.team||'')}</td><td><span class="badge warn">${esc(x.status||'')}</span></td></tr>`);
+    const txRows=(d.transactions||[]).slice(0,40).map(x=>`<tr><td>${x.date?new Date(x.date).toLocaleDateString():'—'}</td><td><strong>${esc(x.team||'League')}</strong></td><td>${esc(x.type||'')}</td><td>${esc((x.items||[]).map(i=>`${i.action||i.type||''} ${i.player||''}`).join(' • '))}</td></tr>`);
+    const rosterTeams=d.rosters||[];
+    const rosterOptions=rosterTeams.map((t,i)=>`<option value="${i}">${esc(t.team)}</option>`).join('');
+    $('#liveArea').className='';
+    $('#liveArea').innerHTML=`
+      <div class="metrics">
+        ${metric('Current week',d.currentWeek||'—')}
+        ${metric('Teams',(d.standings||[]).length||'—')}
+        ${metric('Recent transactions',(d.transactions||[]).length,'ESPN activity')}
+        ${metric('Current injuries',(d.injuries||[]).length,'non-active roster statuses')}
+      </div>
+      <div class="card"><h2>Live Matchups</h2><div class="scoreboard">${matchupCards||'<div class="empty">No current-week matchups returned yet.</div>'}</div></div>
+      <div class="grid-2 section-gap">
+        <div class="card"><h2>Current Standings + Power Score</h2>${standingRows.length?table(['#','Team / Manager','Record','PF','PA','Power'],standingRows):'<div class="empty">Standings not available yet.</div>'}</div>
+        <div class="card"><h2>Current Injuries</h2>${injuryRows.length?table(['Player','Pos','Team','Status'],injuryRows):'<div class="empty">No injured roster players returned.</div>'}</div>
+      </div>
+      <div class="grid-2 section-gap">
+        <div class="card"><h2>Recent League Activity</h2>${txRows.length?table(['Date','Team','Type','Players'],txRows):'<div class="empty">No recent transactions returned.</div>'}</div>
+        <div class="card"><h2>Current Rosters</h2>${rosterTeams.length?`<div class="controls"><select id="liveRosterPick">${rosterOptions}</select></div><div id="liveRosterTable"></div>`:'<div class="empty">Rosters not available.</div>'}</div>
+      </div>`;
+    if(rosterTeams.length){
+      const drawRoster=()=>{const t=rosterTeams[Number($('#liveRosterPick').value)||0]; $('#liveRosterTable').innerHTML=table(['Slot','Player','Pos','Status'],(t.players||[]).map(p=>`<tr><td>${esc(p.slot||'')}</td><td><strong>${esc(p.player||'')}</strong></td><td>${esc(p.position||'')}</td><td>${p.injuryStatus&&p.injuryStatus!=='ACTIVE'?`<span class="badge warn">${esc(p.injuryStatus)}</span>`:'Active'}</td></tr>`));};
+      $('#liveRosterPick').addEventListener('change',drawRoster); drawRoster();
+    }
   }catch(e){
     setStatus('Live connection needs setup','warn');
     $('#liveArea').className='empty';
-    $('#liveArea').innerHTML=`<strong>Live ESPN connection isn't active yet.</strong><br><br>${esc(e.message)}<br><br><span class="muted">Run this website from the same ESPN_League_Archive folder as your existing espn_downloader.py, or set ESPN_S2 and SWID as environment variables.</span>`;
+    $('#liveArea').innerHTML=`<strong>Live ESPN connection isn't active.</strong><br><br>${esc(e.message)}<br><br><span class="muted">Check ESPN_S2 and SWID in Vercel Environment Variables, then redeploy.</span>`;
   }
 }
 
@@ -118,46 +145,61 @@ function renderRecords(){
 }
 
 function renderDraft(){
-  setHeader('Draft Lab','Draft history today; full value model ready for public-data enrichment.');
-  const coverage=DATA.meta.draftActualPointsCoveragePct;
-  const named=DATA.meta.draftNameCoveragePct;
-  const picks=DATA.draft.filter(x=>x['Player Name']).slice().sort((a,b)=>Number(a.Season)-Number(b.Season)||Number(a['Overall Pick'])-Number(b['Overall Pick']));
+  setHeader('Draft Lab','Real draft-value analytics across 2013–2025.');
+  const A=DATA.draftAnalytics||{};
+  if(!A.topSteals){ $('#content').innerHTML='<div class="empty">Draft analytics have not been built yet.</div>'; return; }
+  const years=[...new Set((A.classes||[]).map(x=>x.Season))].sort((a,b)=>b-a);
+  const top=A.topSteals[0], best=A.bestClasses?.[0];
   $('#content').innerHTML=`
     <div class="metrics">
-      ${metric('Draft picks',fmt(DATA.meta.draftPicks))}
-      ${metric('Player-name coverage',named+'%','matched from ESPN player IDs')}
-      ${metric('Actual-points coverage',coverage+'%','partial roster snapshot')}
-      ${metric('Target metric','VORP + pick value','public enrichment')}
+      ${metric('Draft picks',fmt(A.totalPicks||DATA.meta.draftPicks))}
+      ${metric('Graded picks',fmt(A.gradedPicks),`${A.coveragePct}% current coverage`)}
+      ${metric('Biggest steal',top?top['Player Name']:'—',top?`${top.Season} • Pick ${top['Overall Pick']} • ${signed(top.ValueAboveSlot)} pts`: '')}
+      ${metric('Best class',best?best.Grade:'—',best?`${best.Season} • ${best.TeamName||best['Team Name']||best.Owner}`:'')}
     </div>
-    <div class="hero"><h2>Planned draft scoring model</h2><p><strong>Steal / bust value</strong> will compare actual season points against expected value for that exact draft slot and position. Injury-adjusted grading will separate poor performance from games missed. The site already preserves ESPN player IDs so public NFL data can be joined without name guessing.</p></div>
-    <div class="controls"><input id="draftSearch" placeholder="Search player, team or season"><select id="draftSeason"><option value="">All seasons</option>${[...new Set(DATA.draft.map(x=>x.Season))].sort((a,b)=>b-a).map(y=>`<option>${y}</option>`).join('')}</select></div>
-    <div id="draftTable"></div>`;
-  const draw=()=>{
-    const q=$('#draftSearch').value.toLowerCase(), sy=$('#draftSeason').value;
-    const filtered=picks.filter(x=>(!sy||String(x.Season)===sy)&&(!q||JSON.stringify(x).toLowerCase().includes(q))).slice(0,300);
-    $('#draftTable').innerHTML=table(['Year','Pick','Round','Player','Team','Actual pts*'],filtered.map(x=>`<tr><td>${x.Season}</td><td>${esc(x['Overall Pick'])}</td><td>${esc(x.Round)}</td><td><strong>${esc(x['Player Name']||'Unknown')}</strong></td><td>${esc(x['Team Name'])}</td><td>${fmt(x['Actual Season Points (partial)'],1)}</td></tr>`));
-  }; $('#draftSearch').addEventListener('input',draw); $('#draftSeason').addEventListener('change',draw); draw();
+    <div class="hero"><h2>How Draft Value works</h2><p><strong>Slot Value = actual season fantasy points − historical expected points at that overall pick.</strong> Expected points are estimated from nearby draft slots across other seasons. This v1 model grades only picks with a saved ESPN season-point total; the next enrichment pass will fill the remaining missing totals and add injury-adjusted grades.</p></div>
+    <div class="tabs" id="draftTabs">
+      <button class="active" data-tab="steals">Steals & Busts</button><button data-tab="classes">Draft Classes</button><button data-tab="managers">Manager Careers</button><button data-tab="positions">Position / Round Value</button><button data-tab="all">All Picks</button>
+    </div><div id="draftPanel"></div>`;
+  const panel=$('#draftPanel');
+  const stealRows=(A.topSteals||[]).slice(0,25).map((x,i)=>`<tr><td>${i+1}</td><td><strong>${esc(x['Player Name'])}</strong><br><span class="muted">${x.Season} • Pick ${x['Overall Pick']} • ${esc(x.Position||'')}</span></td><td>${fmt(x.ActualPoints,1)}</td><td>${fmt(x.ExpectedSlotPoints,1)}</td><td class="good"><strong>${signed(x.ValueAboveSlot)}</strong></td><td>${esc(x['Owner(s)']||x['Team Name'])}</td></tr>`);
+  const bustRows=(A.topBusts||[]).slice(0,25).map((x,i)=>`<tr><td>${i+1}</td><td><strong>${esc(x['Player Name'])}</strong><br><span class="muted">${x.Season} • Pick ${x['Overall Pick']} • ${esc(x.Position||'')}</span></td><td>${fmt(x.ActualPoints,1)}</td><td>${fmt(x.ExpectedSlotPoints,1)}</td><td class="bad"><strong>${signed(x.ValueAboveSlot)}</strong></td><td>${esc(x['Owner(s)']||x['Team Name'])}</td></tr>`);
+  const renderTab=tab=>{
+    document.querySelectorAll('#draftTabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+    if(tab==='steals') panel.innerHTML=`<div class="grid-2"><div class="card"><h2>Biggest Steals</h2>${table(['#','Player','Actual','Expected','Value','Manager'],stealRows)}</div><div class="card"><h2>Biggest Busts</h2>${table(['#','Player','Actual','Expected','Value','Manager'],bustRows)}</div></div>`;
+    if(tab==='classes'){
+      panel.innerHTML=`<div class="controls"><label>Season <select id="classSeason">${years.map(y=>`<option>${y}</option>`).join('')}</select></label></div><div id="classTable"></div><div class="grid-2 section-gap"><div class="card"><h2>Best Classes Ever</h2>${table(['Year','Grade','Team / Manager','Avg Value','Total Value','Coverage'],(A.bestClasses||[]).slice(0,20).map(x=>`<tr><td>${x.Season}</td><td><span class="badge ${gradeTone(x.Grade)}">${esc(x.Grade)}</span></td><td><strong>${esc(x['Team Name'])}</strong><br><span class="muted">${esc(x.Owner)}</span></td><td class="${valueTone(x.AvgValue)}">${signed(x.AvgValue)}</td><td class="${valueTone(x.TotalValue)}">${signed(x.TotalValue)}</td><td>${fmt(x.CoveragePct,1)}%</td></tr>`))}</div><div class="card"><h2>Worst Classes Ever</h2>${table(['Year','Grade','Team / Manager','Avg Value','Total Value','Coverage'],(A.worstClasses||[]).slice(0,20).map(x=>`<tr><td>${x.Season}</td><td><span class="badge ${gradeTone(x.Grade)}">${esc(x.Grade)}</span></td><td><strong>${esc(x['Team Name'])}</strong><br><span class="muted">${esc(x.Owner)}</span></td><td class="${valueTone(x.AvgValue)}">${signed(x.AvgValue)}</td><td class="${valueTone(x.TotalValue)}">${signed(x.TotalValue)}</td><td>${fmt(x.CoveragePct,1)}%</td></tr>`))}</div></div>`;
+      const draw=()=>{const y=Number($('#classSeason').value);const rows=(A.classes||[]).filter(x=>Number(x.Season)===y).sort((a,b)=>b.RawScore-a.RawScore).map((x,i)=>`<tr><td>${i+1}</td><td><span class="badge ${gradeTone(x.Grade)}"><strong>${esc(x.Grade)}</strong></span></td><td><strong>${esc(x['Team Name'])}</strong><br><span class="muted">${esc(x.Owner)}</span></td><td>${x['Graded Picks']}/${x.Picks}</td><td class="${valueTone(x.AvgValue)}">${signed(x.AvgValue)}</td><td class="${valueTone(x.TotalValue)}">${signed(x.TotalValue)}</td><td>${fmt(x.HitRatePct,1)}%</td><td>${fmt(x.BustRatePct,1)}%</td></tr>`);$('#classTable').innerHTML=table(['#','Grade','Team / Manager','Graded','Avg Value','Total Value','Steal %','Bust %'],rows);};$('#classSeason').addEventListener('change',draw);draw();
+    }
+    if(tab==='managers') panel.innerHTML=`<div class="card"><h2>Career Draft Performance</h2>${table(['#','Manager','Seasons','Graded Picks','Value / Pick','Total Value','A-range Classes'],(A.managerCareer||[]).map((x,i)=>`<tr><td>${i+1}</td><td><strong>${esc(x.Owner)}</strong></td><td>${x.Seasons}</td><td>${x.GradedPicks}</td><td class="${valueTone(x.AvgValuePerPick)}"><strong>${signed(x.AvgValuePerPick)}</strong></td><td class="${valueTone(x.TotalValue)}">${signed(x.TotalValue)}</td><td>${x.AorBetter}</td></tr>`))}</div>`;
+    if(tab==='positions') panel.innerHTML=`<div class="grid-2"><div class="card"><h2>Value by Position</h2><p class="muted">Compared against the historical expectation for the same position and round.</p>${table(['Position','Picks','Actual','Expected','Value','Steal %','Bust %'],(A.positionValue||[]).map(x=>`<tr><td><strong>${esc(x.Position)}</strong></td><td>${x.Picks}</td><td>${fmt(x.AvgActual,1)}</td><td>${fmt(x.AvgExpected,1)}</td><td class="${valueTone(x.AvgValue)}">${signed(x.AvgValue)}</td><td>${fmt(x.HitRatePct,1)}%</td><td>${fmt(x.BustRatePct,1)}%</td></tr>`))}</div><div class="card"><h2>Value by Round</h2>${table(['Round','Picks','Actual','Expected','Value','Steal %','Bust %'],(A.roundValue||[]).map(x=>`<tr><td><strong>${x.Round}</strong></td><td>${x.Picks}</td><td>${fmt(x.AvgActual,1)}</td><td>${fmt(x.AvgExpected,1)}</td><td class="${valueTone(x.AvgValue)}">${signed(x.AvgValue)}</td><td>${fmt(x.HitRatePct,1)}%</td><td>${fmt(x.BustRatePct,1)}%</td></tr>`))}</div></div>`;
+    if(tab==='all'){
+      panel.innerHTML=`<div class="controls"><input id="draftSearch" placeholder="Search player, manager or team"><select id="draftSeason"><option value="">All seasons</option>${years.map(y=>`<option>${y}</option>`).join('')}</select><select id="draftPos"><option value="">All positions</option>${[...new Set((A.picks||[]).map(x=>x.Position).filter(Boolean))].sort().map(p=>`<option>${p}</option>`).join('')}</select></div><div id="draftTable"></div>`;
+      const draw=()=>{const q=$('#draftSearch').value.toLowerCase(),sy=$('#draftSeason').value,pos=$('#draftPos').value;const xs=(A.picks||[]).filter(x=>(!sy||String(x.Season)===sy)&&(!pos||x.Position===pos)&&(!q||JSON.stringify(x).toLowerCase().includes(q))).sort((a,b)=>Number(b.Season)-Number(a.Season)||Number(a['Overall Pick'])-Number(b['Overall Pick'])).slice(0,600);$('#draftTable').innerHTML=table(['Year','Pick','Rnd','Player','Pos','Manager / Team','Actual','Expected','Value'],xs.map(x=>`<tr><td>${x.Season}</td><td>${x['Overall Pick']}</td><td>${x.Round}</td><td><strong>${esc(x['Player Name']||'Unknown')}</strong></td><td>${esc(x.Position||'')}</td><td>${esc(x['Owner(s)']||x['Team Name'])}</td><td>${fmt(x.ActualPoints,1)}</td><td>${fmt(x.ExpectedSlotPoints,1)}</td><td class="${valueTone(x.ValueAboveSlot)}"><strong>${signed(x.ValueAboveSlot)}</strong></td></tr>`));};$('#draftSearch').addEventListener('input',draw);$('#draftSeason').addEventListener('change',draw);$('#draftPos').addEventListener('change',draw);draw();
+    }
+  };
+  document.querySelectorAll('#draftTabs button').forEach(b=>b.addEventListener('click',()=>renderTab(b.dataset.tab))); renderTab('steals');
 }
 
 function renderTrades(){
-  setHeader('Trade Center','Transaction grading framework is ready; historical trade pull is the remaining source-data step.');
-  $('#content').innerHTML=`<div class="hero"><h2>Trade grading will be date-aware.</h2><p>A good trade model should not compare full-season totals. It will grade each side using <strong>expected rest-of-season value on the trade date</strong> versus <strong>actual rest-of-season production</strong>, then adjust for injuries, positional scarcity, and multi-player packages.</p></div>
-  <div class="grid-2"><div class="card"><h2>Features</h2><div class="feature-list">
-    <div class="feature"><strong>Biggest Fleeces</strong><span class="muted">Largest realized value gap after the trade.</span></div>
-    <div class="feature"><strong>Best Balanced Trades</strong><span class="muted">Deals where both sides received similar realized value.</span></div>
-    <div class="feature"><strong>Manager Trade Records</strong><span class="muted">Career trade wins, losses and net value.</span></div>
-    <div class="feature"><strong>Trade Timeline</strong><span class="muted">Every deal with players, date and rest-of-season scoring.</span></div>
-  </div></div><div class="card"><h2>Current data status</h2><p><span class="badge warn">Needs historical ESPN activity pull</span></p><p class="muted">Your current workbook contains transaction counters, but not the individual historical trade packages needed to grade deals correctly. The website labels this as unavailable rather than inventing results.</p></div></div>`;
+  setHeader('Trade Center','Every trade, date-aware rest-of-season value, fleeces and manager records.');
+  const A=DATA.tradeAnalytics||{}, trades=A.trades||[];
+  if(!trades.length){
+    $('#content').innerHTML=`<div class="hero"><h2>Historical trade pull is the next local-data step.</h2><p>The website is ready to score trades, but your current archive did not include individual historical trade packages. The local enrichment tool will use ESPN's <code>mTransactions2</code> transaction view for each scoring period, then calculate each player's actual rest-of-season production after the trade.</p></div><div class="grid-2"><div class="card"><h2>What will appear here</h2><div class="feature-list"><div class="feature"><strong>Every Historical Trade</strong><span class="muted">Date, teams, players and draft picks where available.</span></div><div class="feature"><strong>Biggest Fleeces</strong><span class="muted">Largest realized rest-of-season value gap.</span></div><div class="feature"><strong>Balanced Trades</strong><span class="muted">Deals with the smallest value difference.</span></div><div class="feature"><strong>Manager Trade Records</strong><span class="muted">Career wins, losses and net realized value.</span></div></div></div><div class="card"><h2>Status</h2><p><span class="badge warn">Run local trade enrichment</span></p><p class="muted">No trade ranking is shown until the actual packages are recovered from ESPN. This avoids inventing or misattributing trades.</p></div></div>`;return;
+  }
+  const fleece=(A.biggestFleeces||[]).slice(0,20), balanced=(A.mostBalanced||[]).slice(0,20);
+  const tr=x=>`<tr><td>${x.Season} W${x.Week}</td><td><strong>${esc(x.TeamA)}</strong><br>${esc((x.TeamAPlayers||[]).join(', '))}</td><td><strong>${esc(x.TeamB)}</strong><br>${esc((x.TeamBPlayers||[]).join(', '))}</td><td class="${valueTone(x.ValueGap)}">${signed(x.ValueGap)}</td></tr>`;
+  $('#content').innerHTML=`<div class="metrics">${metric('Historical trades',trades.length)}${metric('Biggest value gap',fleece[0]?signed(fleece[0].ValueGap):'—')}${metric('Managers graded',(A.managerCareer||[]).length)}${metric('Model','ROS realized value','expected model follows')}</div><div class="grid-2"><div class="card"><h2>Biggest Fleeces</h2>${table(['When','Side A','Side B','Value Gap'],fleece.map(tr))}</div><div class="card"><h2>Most Balanced</h2>${table(['When','Side A','Side B','Value Gap'],balanced.map(tr))}</div></div><div class="card section-gap"><h2>Trade Timeline</h2>${table(['When','Side A','Side B','Value Gap'],trades.slice().sort((a,b)=>b.Timestamp-a.Timestamp).map(tr))}</div>`;
 }
 
 function renderInjuries(){
-  setHeader('Injury Room','Games missed, injury-adjusted draft grades and availability trends.');
-  $('#content').innerHTML=`<div class="hero"><h2>Separate bad picks from bad injury luck.</h2><p>The enrichment layer is designed to join ESPN player IDs to public NFL player IDs, then calculate games available, games played and games missed. That allows draft grades such as <strong>raw value</strong>, <strong>per-game value</strong>, and <strong>injury-adjusted value</strong>.</p></div>
-  <div class="grid-3">
-    <div class="card"><h3>Most Games Missed</h3><p class="muted">Rank drafted players by missed regular-season games.</p><span class="badge warn">Public enrichment needed</span></div>
-    <div class="card"><h3>Injury Busts</h3><p class="muted">High draft-cost players whose value loss was primarily availability.</p><span class="badge warn">Public enrichment needed</span></div>
-    <div class="card"><h3>Iron Men</h3><p class="muted">High-value drafted players with strong season-long availability.</p><span class="badge warn">Public enrichment needed</span></div>
-  </div>`;
+  setHeader('Injury Room','Games missed, reported injury weeks and injury-adjusted draft value.');
+  const A=DATA.injuryAnalytics||{}, players=A.players||[];
+  if(!players.length){
+    $('#content').innerHTML=`<div class="hero"><h2>Next: distinguish bad picks from bad injury luck.</h2><p>The enrichment tool joins your ESPN player IDs to nflverse's player-ID map and injury reports. nflverse injury data is available back to 2009, so it covers the full 2013–2025 history.</p></div><div class="grid-3"><div class="card"><h3>Most Games Missed</h3><p class="muted">Drafted players with the most reported injury absences.</p><span class="badge warn">Enrichment pending</span></div><div class="card"><h3>Injury Busts</h3><p class="muted">Negative draft value where availability explains a large share of the loss.</p><span class="badge warn">Enrichment pending</span></div><div class="card"><h3>Iron Men</h3><p class="muted">High-value picks with strong season-long availability.</p><span class="badge warn">Enrichment pending</span></div></div>`;return;
+  }
+  const row=x=>`<tr><td>${x.Season}</td><td><strong>${esc(x.Player)}</strong><br><span class="muted">Pick ${x.OverallPick} • ${esc(x.Position||'')}</span></td><td>${x.GamesPlayed??'—'}</td><td>${x.GamesMissed??'—'}</td><td>${x.InjuryWeeks??'—'}</td><td class="${valueTone(x.DraftValue)}">${signed(x.DraftValue)}</td></tr>`;
+  $('#content').innerHTML=`<div class="metrics">${metric('Players enriched',players.length)}${metric('Most missed',A.mostMissed?.[0]?.GamesMissed??'—',A.mostMissed?.[0]?.Player||'')}${metric('Injury busts',(A.injuryBusts||[]).length)}${metric('Iron men',(A.ironMen||[]).length)}</div><div class="grid-3"><div class="card"><h2>Most Games Missed</h2>${table(['Year','Player','GP','Missed','Inj Weeks','Draft Value'],(A.mostMissed||[]).slice(0,25).map(row))}</div><div class="card"><h2>Injury Busts</h2>${table(['Year','Player','GP','Missed','Inj Weeks','Draft Value'],(A.injuryBusts||[]).slice(0,25).map(row))}</div><div class="card"><h2>Iron Men</h2>${table(['Year','Player','GP','Missed','Inj Weeks','Draft Value'],(A.ironMen||[]).slice(0,25).map(row))}</div></div>`;
 }
 
 function renderData(){
@@ -167,8 +209,9 @@ function renderData(){
     ['Teams / standings','Complete','good'],
     ['Historical matchups','Complete','good'],
     ['Draft picks','Complete IDs; 94%+ names','good'],
-    ['Draft actual season points','Partial roster-derived coverage','warn'],
-    ['Live 2026 matchups','Server-side ESPN connection','good'],
+    ['Draft Lab value model','Live on currently covered picks','good'],
+    ['Draft actual season points','70.6% current; exact ESPN enrichment next','warn'],
+    ['Live 2026 matchups / standings / rosters','Server-side ESPN connection','good'],
     ['Historical individual trades','Needs activity export','warn'],
     ['Games missed / injuries','Needs public NFL enrichment','warn'],
     ['Historical preseason projections','Source-dependent enrichment','warn']
