@@ -623,7 +623,7 @@ function tradeCountText(n){
   return Number.isInteger(v)?fmt(v):fmt(v,1);
 }
 
-function transactionBars(rows,key,labelKey,maxRows=12){
+function transactionBars(rows,key,labelKey,maxRows=Infinity){
   const xs=[...rows].sort((a,b)=>Number(b[key]||0)-Number(a[key]||0)).slice(0,maxRows);
   const max=Math.max(1,...xs.map(x=>Number(x[key]||0)));
   return xs.map((x,i)=>`<div class="bar-row transaction-bar">
