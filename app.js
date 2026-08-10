@@ -686,7 +686,7 @@ function renderTrades(){
         <td><strong>${tradeCountText(x.CompletedTrades)}</strong></td>
       </tr>`);
 
-      const topActivity=[...franchises].sort((a,b)=>b.Activity-a.Activity).slice(0,12).map((x,i)=>`<tr>
+      const topActivity=[...franchises].sort((a,b)=>b.Activity-a.Activity).map((x,i)=>`<tr>
         <td>${i+1}</td>
         <td>${displayFranchise(x.TeamID,x.Team,x.Manager)}</td>
         <td>${x.Seasons}</td>
