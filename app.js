@@ -267,7 +267,7 @@ function renderHome(){
           <div><span class="section-eyebrow">LONGEVITY</span><h2>All-Time Wins</h2></div>
           <span class="muted">Franchise totals</span>
         </div>
-        ${franchises.slice(0,8).map((f,i)=>`<div class="bar-row home-win-row">
+        ${franchises.slice(0,12).map((f,i)=>`<div class="bar-row home-win-row">
           <span><strong>${i+1}.</strong> ${esc(f.currentTeam)}</span>
           <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100,f.wins/maxWins*100)}%"></div></div>
           <strong>${f.wins} W</strong>
