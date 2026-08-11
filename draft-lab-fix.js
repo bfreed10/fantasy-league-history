@@ -1,9 +1,9 @@
-// LFL Draft Lab Value Model v14.1
+// LFL Draft Lab Value Model v14.2
 // "Expected" now means ESPN weekly projection ONLY.
 // Historical draft comparison is shown as Draft Value Percentile (0-100),
 // never as fake expected fantasy points.
 
-window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
+window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
 
 (function () {
   if (!window.pages || typeof pages.draft !== "function") return;
@@ -13,7 +13,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
   const KEVIN_WHITE_ESPN_ID = 3042435;
   const TRAVIS_HUNTER_ESPN_ID = 4685415;
 
-  let V141 = null;
+  let V141 = null; // v14.2 data object; variable name retained for compatibility
   let loadPromise = null;
   let applied = false;
   let relabelling = false;
@@ -140,11 +140,16 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
         DraftValueLabel: metric?.dl || "No benchmark",
         DraftComparableCount: metric?.dc ?? 0,
 
-        V14ProjectionWeeks: metric?.pw ?? 0,
-        V14ESPNProjected: metric?.ep ?? null,
-        V14ProjectionActual: metric?.ea ?? null,
-        V14ProjectionDelta: metric?.ed ?? null,
-        V14ProjectionDeltaPct: metric?.epp ?? null,
+        V14ProjectionWeeks: metric?.wew ?? 0,
+        V14ESPNWeeklyProjected: metric?.wep ?? null,
+        V14WeeklyProjectionActual: metric?.wea ?? null,
+        V14WeeklyProjectionDelta: metric?.wed ?? null,
+
+        // v14.2: draft "Expected" means ESPN's stored preseason full-season projection.
+        V142ESPNPreseasonProjected: metric?.pep ?? null,
+        V142SeasonActual: metric?.pea ?? null,
+        V142PreseasonDelta: metric?.ped ?? null,
+        V142PreseasonSourcePeriod: metric?.pps ?? null,
         V14DraftTeamRosterWeeks: metric?.drw ?? 0,
         V14DraftTeamStarterWeeks: metric?.dsw ?? 0,
         V14DraftTeamStarterPoints: metric?.dsp ?? 0,
@@ -244,27 +249,36 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
   function renderProjectionView() {
     const all = filteredMetrics();
     const rows = all.filter(row =>
-      row.pw >= 4 &&
-      n(row.ep) != null &&
-      n(row.ea) != null &&
-      n(row.ed) != null
+      n(row.pep) != null &&
+      n(row.pea) != null &&
+      n(row.ped) != null
     );
 
     if (!rows.length) {
-      return `<div class="empty">ESPN weekly projection history is unavailable for this selection. Historical ESPN projections are retained for 2018–2025.</div>`;
+      const root = document.querySelector("#draftValueV141");
+      const season = root?.querySelector("#dv141Season")?.value || "";
+
+      if (season === "2023") {
+        return `<div class="empty"><strong>2023 ESPN preseason projections are intentionally unavailable.</strong><br><br>ESPN's historical archive returns 0.0 season projections for 160 of 192 drafted players in this league — including healthy elite players — and those zero values persist across every roster snapshot we tested. Rather than publish bad data, 2023 is excluded.</div>`;
+      }
+
+      if (["2013","2014","2015","2016","2017"].includes(season)) {
+        return `<div class="empty"><strong>ESPN preseason projection history is unavailable for ${esc14(season)}.</strong><br><br>The historical league archive did not retain usable season-level preseason projections for 2013–2017.</div>`;
+      }
+
+      return `<div class="empty">No verified ESPN preseason season projection is available for this selection.</div>`;
     }
 
-    const best = [...rows].sort((a, b) => n(b.ed) - n(a.ed)).slice(0, 15);
-    const worst = [...rows].sort((a, b) => n(a.ed) - n(b.ed)).slice(0, 15);
+    const best = [...rows].sort((a, b) => n(b.ped) - n(a.ped)).slice(0, 15);
+    const worst = [...rows].sort((a, b) => n(a.ped) - n(b.ped)).slice(0, 15);
 
     const make = (list, good) => list.map((row, index) => `
       <tr>
         <td>${index + 1}</td>
         <td>${playerCell(row)}</td>
-        <td>${fmt14(row.ea, 1)}</td>
-        <td>${fmt14(row.ep, 1)}</td>
-        <td class="${good ? "good" : "bad"}"><strong>${signed14(row.ed, 1)}</strong></td>
-        <td>${row.pw}</td>
+        <td>${fmt14(row.pea, 1)}</td>
+        <td>${fmt14(row.pep, 1)}</td>
+        <td class="${good ? "good" : "bad"}"><strong>${signed14(row.ped, 1)}</strong></td>
         <td>${franchiseCell(row)}</td>
       </tr>
     `);
@@ -272,15 +286,15 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
     return `
       <div class="draft-v141-grid">
         <div class="card">
-          <h2>Most Above ESPN Expectation</h2>
-          ${table14(["#","Player","Actual (same weeks)","ESPN Expected","Difference","Weeks","Drafted By"], make(best, true))}
+          <h2>Most Above Preseason Expectation</h2>
+          ${table14(["#","Player","Actual Season Pts","ESPN Preseason Expected","Beat By","Drafted By"], make(best, true))}
         </div>
         <div class="card">
-          <h2>Most Below ESPN Expectation</h2>
-          ${table14(["#","Player","Actual (same weeks)","ESPN Expected","Difference","Weeks","Drafted By"], make(worst, false))}
+          <h2>Most Below Preseason Expectation</h2>
+          ${table14(["#","Player","Actual Season Pts","ESPN Preseason Expected","Missed By","Drafted By"], make(worst, false))}
         </div>
       </div>
-      <p class="draft-v141-note"><strong>Expected means ESPN projection here.</strong> Actual is summed only over the exact same weeks where ESPN retained a projection. Leaderboards require at least four projected weeks.</p>
+      <p class="draft-v141-note"><strong>Expected = ESPN's stored full-season preseason projection.</strong> Actual = the player's full-season fantasy points under the same league scoring basis. Weekly in-season projections are not summed. Verified usable seasons: 2018–2022 and 2024–2025. 2023 is excluded because ESPN's historical projection archive is corrupted for that season.</p>
     `;
   }
 
@@ -403,22 +417,22 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
     root.innerHTML = `
       <div class="draft-v141-head">
         <div>
-          <span class="section-eyebrow">DRAFT VALUE 2.1 • v14.1</span>
-          <h2>Expected points now means ESPN expected points.</h2>
-          <p>Historical draft comparison no longer masquerades as a fantasy-point projection. ESPN projection, relative draft outcome, and manager-realized production are three separate metrics.</p>
+          <span class="section-eyebrow">DRAFT VALUE 2.2 • v14.2</span>
+          <h2>Expected points now means ESPN preseason season projection.</h2>
+          <p>Draft expectation now uses ESPN's stored preseason full-season projection. Relative draft outcome and manager-realized production remain separate metrics.</p>
         </div>
         <span class="badge good">${fmt14(V141.meta.draftValueCoveragePct, 2)}% draft-value coverage</span>
       </div>
 
       <div class="metrics section-gap">
         <div class="metric"><small>Draft-value picks</small><strong>${V141.meta.draftValuePicks.toLocaleString()}</strong><span class="muted">of ${V141.meta.picks.toLocaleString()} picks</span></div>
-        <div class="metric"><small>ESPN projection coverage</small><strong>${fmt14(V141.meta.projectionEligibleCoveragePct, 2)}%</strong><span class="muted">${V141.meta.projectionSeasons}</span></div>
+        <div class="metric"><small>ESPN preseason coverage</small><strong>${fmt14(V141.meta.preseasonProjectionCoveragePct, 2)}%</strong><span class="muted">${V141.meta.preseasonProjectionSeasons}</span></div>
         <div class="metric"><small>Weekly player rows</small><strong>${V141.meta.weeklyPlayerRows.toLocaleString()}</strong><span class="muted">historical archive</span></div>
         <div class="metric"><small>Draft classes</small><strong>${V141.meta.classCount}</strong><span class="muted">regraded on relative value</span></div>
       </div>
 
       <div class="draft-v141-tabs">
-        <button type="button" class="active" data-dv141-tab="projection">ESPN Expected vs Actual</button>
+        <button type="button" class="active" data-dv141-tab="projection">ESPN Preseason Expected vs Actual</button>
         <button type="button" data-dv141-tab="draftvalue">Draft Value Percentile</button>
         <button type="button" data-dv141-tab="production">Drafting-Team Production</button>
       </div>
@@ -432,7 +446,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
 
       <div class="draft-v141-definition">
         <span class="badge good">Expected Points</span>
-        <div><strong>ESPN weekly projection only.</strong><span class="muted">${esc14(V141.meta.definitions.expectedPoints)}</span></div>
+        <div><strong>ESPN preseason full-season projection only.</strong><span class="muted">${esc14(V141.meta.definitions.expectedPoints)}</span></div>
       </div>
       <div class="draft-v141-definition">
         <span class="badge">Draft Value</span>
@@ -506,7 +520,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
       const hero = [...content.querySelectorAll(".hero p")]
         .find(p => p.textContent.includes("Slot Value =") || p.textContent.includes("Draft Value"));
       if (hero) {
-        hero.innerHTML = `<strong>Expected Points = ESPN weekly projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate.`;
+        hero.innerHTML = `<strong>Expected Points = ESPN preseason full-season projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate.`;
       }
 
       if (!panel) return;
@@ -575,11 +589,11 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
     if (typeof setHeader === "function") {
       setHeader(
         "Draft Lab",
-        "ESPN expected points, relative draft value, and actual drafting-team production across 2013–2025."
+        "ESPN preseason expected points, relative draft value, and actual drafting-team production across 2013–2025."
       );
     }
     if (typeof setStatus === "function") {
-      setStatus("Draft Value 2.1 loaded", "good");
+      setStatus("Draft Value 2.2 loaded", "good");
     }
   }
 
@@ -590,12 +604,12 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
     }
 
     if (typeof setHeader === "function") {
-      setHeader("Draft Lab", "Loading corrected expected-points model...");
+      setHeader("Draft Lab", "Loading verified preseason expected-points model...");
     }
 
     const content = document.querySelector("#content");
     if (content) {
-      content.innerHTML = `<div class="empty">Loading Draft Value 2.1…</div>`;
+      content.innerHTML = `<div class="empty">Loading Draft Value 2.2…</div>`;
     }
 
     loadV141()
@@ -605,7 +619,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.1";
         }
       })
       .catch(error => {
-        console.error("Draft Value v14.1 failed to load", error);
+        console.error("Draft Value v14.2 failed to load", error);
         baseDraftPage();
         if (typeof setStatus === "function") {
           setStatus("Draft Value data unavailable", "warn");
