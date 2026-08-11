@@ -1203,7 +1203,7 @@ document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()
 
 (async()=>{
   try{
-    DATA=await fetch('/data/history._SAFE_MERGED_v10_4.json').then(r=>r.json());
+    DATA=await fetch('/data/history_SAFE_MERGED_v10_4.json').then(r=>r.json());
     navigate('home');
   }catch(e){
     $('#content').innerHTML=`<div class="empty">Could not load league history: ${esc(e.message)}</div>`;
