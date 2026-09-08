@@ -134,7 +134,7 @@ setHeader(
       <div class="card"><h2>Week ${liveSelectedWeek} Matchups</h2><div class="scoreboard">${matchupCards||'<div class="empty">No matchups returned for this week.</div>'}</div></div>
       <div id="liveBoxscoreArea"></div>
       <details class="card section-gap live-draft-results">
-        <summary>2026 Draft Results • ${(d.draftPicks||[]).length} picks</summary>
+        <summary>${liveSeason} Draft Results • ${(d.draftPicks||[]).length} picks</summary>
         ${draftRows.length?table(['Pick','Player','Team / Manager','Type'],draftRows):'<div class="empty">Draft results are not available yet.</div>'}
       </details>
       <div class="grid-2 section-gap">
