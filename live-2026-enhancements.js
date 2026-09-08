@@ -129,7 +129,7 @@ setHeader(
         ${metric('Current week',b.currentWeek||d.currentWeek||'—')}
         ${metric('Viewing week',liveSelectedWeek||'—')}
         ${metric('Teams',(d.standings||[]).length||'—')}
-        ${metric('2026 draft picks',(d.draftPicks||[]).length||'—','live ESPN draft board')}
+        ${metric(`${liveSeason} draft picks`,(d.draftPicks||[]).length||'—','live ESPN draft board')}
       </div>
       <div class="card"><h2>Week ${liveSelectedWeek} Matchups</h2><div class="scoreboard">${matchupCards||'<div class="empty">No matchups returned for this week.</div>'}</div></div>
       <div id="liveBoxscoreArea"></div>
