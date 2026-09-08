@@ -79,7 +79,27 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
     for(const s of standings){const g=s.wins+s.losses+s.ties;const wp=g?(s.wins+.5*s.ties)/g:.5;const pf=g?s.pointsFor/maxPF:.5;s.powerScore=Math.round((55*wp+45*pf)*10)/10;}
     standings.sort((a,b)=>b.wins-a.wins||b.ties-a.ties||b.pointsFor-a.pointsFor);
 
-    const rawTx=(data.transactions||[]).slice().sort((a,b)=>(safeDate(b.processDate||b.proposedDate)||0)-(safeDate(a.processDate||a.proposedDate)||0)).slice(0,50);
+    const rawTx=(data.transactions||[])
+  .filter(t=>String(t.status||'').toUpperCase()==='EXECUTED')
+  .filter(t=>{
+    const type=String(t.type||t.executionType||'').toUpperCase();
+
+    // Never expose lineup changes, pending/proposed activity,
+    // failed waivers, or draft bookkeeping in Recent League Activity.
+    if(type==='ROSTER') return false;
+    if(type==='DRAFT') return false;
+    if(type.includes('PROPOSAL')) return false;
+    if(type.includes('PENDING')) return false;
+    if(type.includes('WAIVER_ERROR')) return false;
+
+    return true;
+  })
+  .slice()
+  .sort((a,b)=>
+    (safeDate(b.processDate||b.proposedDate)||0)-
+    (safeDate(a.processDate||a.proposedDate)||0)
+  )
+  .slice(0,50);
     const missingPlayerIds = [...new Set([
   ...rawTx.flatMap(t => (t.items || []).map(i => i.playerId)),
   ...rawDraftPicks.map(p => p.playerId)
