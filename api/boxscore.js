@@ -1,5 +1,11 @@
 const LEAGUE_ID = "1147670";
-const LIVE_SEASON = process.env.LIVE_SEASON || "2026";
+
+const now = new Date();
+const LIVE_SEASON = String(
+  now.getUTCMonth() >= 6
+    ? now.getUTCFullYear()
+    : now.getUTCFullYear() - 1
+);
 
 const POSITIONS = {1:"QB",2:"RB",3:"WR",4:"TE",5:"K",16:"D/ST"};
 const SLOTS = {0:"QB",2:"RB",4:"WR",6:"TE",16:"D/ST",17:"K",20:"Bench",21:"IR",23:"Flex"};
