@@ -93,6 +93,15 @@ async function refreshLive(){
     if(!boxResponse.ok||b.error) throw new Error(b.error||`Box score API HTTP ${boxResponse.status}`);
 
     liveSelectedWeek=Number(b.selectedWeek||liveSelectedWeek||b.currentWeek||d.currentWeek||1);
+    const liveSeason=Number(d.season||b.season||new Date().getFullYear());
+
+const liveNav=document.querySelector('nav button[data-page="live"]');
+if(liveNav) liveNav.innerHTML=`Live ${liveSeason} <span class="live-dot"></span>`;
+
+setHeader(
+  `Live ${liveSeason}`,
+  `Current ${liveSeason} standings, rosters, matchups, transactions, draft results and injuries from ESPN.`
+);
     const weeks=(b.availableWeeks||[]).length?b.availableWeeks:[liveSelectedWeek];
     setStatus(`Live • Week ${b.currentWeek||d.currentWeek||'—'}${liveSelectedWeek!==Number(b.currentWeek||d.currentWeek)?` • Viewing W${liveSelectedWeek}`:''}`,'good');
 
