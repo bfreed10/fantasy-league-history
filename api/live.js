@@ -24,11 +24,13 @@ export default async function handler(req, res) {
 
     const base = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${LIVE_SEASON}/segments/0/leagues/${LEAGUE_ID}`;
     const params = new URLSearchParams();
-    ["mTeam","mRoster","mMatchup","mMatchupScore","mSettings","mSchedule","mTransactions2"].forEach(v=>params.append("view",v));
+    ["mTeam","mRoster","mMatchup","mMatchupScore","mSettings","mSchedule","mTransactions2","mDraftDetail"].forEach(v=>params.append("view",v));
     const headers = {"User-Agent":"Mozilla/5.0","Accept":"application/json","Cookie":`espn_s2=${espnS2}; SWID=${swid}`};
     const response = await fetch(`${base}?${params.toString()}`, {headers});
     if (!response.ok) return res.status(502).json({error:`ESPN returned HTTP ${response.status}: ${(await response.text()).slice(0,180)}`});
     const data = await response.json();
+    const draftDetail = data.draftDetail || {};
+const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
 
     const members = {};
     for (const m of data.members || []) members[m.id] = m.displayName || m.id;
@@ -72,18 +74,32 @@ export default async function handler(req, res) {
     standings.sort((a,b)=>b.wins-a.wins||b.ties-a.ties||b.pointsFor-a.pointsFor);
 
     const rawTx=(data.transactions||[]).slice().sort((a,b)=>(safeDate(b.processDate||b.proposedDate)||0)-(safeDate(a.processDate||a.proposedDate)||0)).slice(0,50);
-    const txIds=[...new Set(rawTx.flatMap(t=>(t.items||[]).map(i=>i.playerId).filter(Boolean)).filter(id=>!playerNames[id]))];
-    if(txIds.length){
+    const missingPlayerIds = [...new Set([
+  ...rawTx.flatMap(t => (t.items || []).map(i => i.playerId)),
+  ...rawDraftPicks.map(p => p.playerId)
+].filter(Boolean).filter(id => !playerNames[id]))];
+    if(missingPlayerIds.length){
       try{
-        const f={players:{filterIds:{value:txIds.slice(0,100)},filterStatsForTopScoringPeriodIds:{value:currentWeek||1,additionalValue:[`00${LIVE_SEASON}`,`10${LIVE_SEASON}`]}}};
+        const f={players:{filterIds:{value:missingPlayerIds.slice(0,100)},filterStatsForTopScoringPeriodIds:{value:currentWeek||1,additionalValue:[`00${LIVE_SEASON}`,`10${LIVE_SEASON}`]}}};
         const pc=await fetch(`${base}?view=kona_playercard`,{headers:{...headers,"x-fantasy-filter":JSON.stringify(f)}});
         if(pc.ok){const pd=await pc.json();for(const row of pd.players||[]){const p=playerObj(row);const id=p.id||row.id;if(id)playerNames[id]=p.fullName||p.name||`Player ${id}`;}}
       }catch(_){ }
     }
+    const draftPicks = rawDraftPicks.map(p => ({
+  overallPick: Number(p.overallPickNumber ?? p.overallPick ?? 0),
+  round: Number(p.roundId ?? p.round ?? 0),
+  roundPick: Number(p.roundPickNumber ?? p.roundPick ?? 0),
+  teamId: Number(p.teamId ?? 0),
+  team: teams[p.teamId]?.name || `Team ${p.teamId || ""}`,
+  owner: teams[p.teamId]?.owner || "",
+  playerId: p.playerId ?? null,
+  player: playerNames[p.playerId] || `Player ${p.playerId || ""}`,
+  keeper: Boolean(p.keeper)
+})).sort((a,b) => a.overallPick - b.overallPick);
     const transactions=rawTx.map(t=>({date:safeDate(t.processDate||t.proposedDate),team:teams[t.teamId]?.name||"League",type:t.type||"",status:t.status||"",items:(t.items||[]).map(i=>({type:i.type||"",action:i.type||"",playerId:i.playerId,player:playerNames[i.playerId]||`Player ${i.playerId||""}`,fromTeam:teams[i.fromTeamId]?.name||"",toTeam:teams[i.toTeamId]?.name||""}))}));
 
     res.setHeader("Cache-Control","no-store");
-    return res.status(200).json({leagueId:LEAGUE_ID,season:Number(LIVE_SEASON),leagueName:data.name||"",currentWeek,matchups,standings,rosters:rosterOutput,transactions,injuries,updatedAt:new Date().toISOString()});
+    return res.status(200).json({leagueId:LEAGUE_ID,season:Number(LIVE_SEASON),leagueName:data.name||"",currentWeek,draftPicks,matchups,standings,rosters:rosterOutput,transactions,injuries,updatedAt:new Date().toISOString()});
   } catch (error) {
     return res.status(503).json({error:error.message||"Unknown server error"});
   }
