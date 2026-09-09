@@ -18,6 +18,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
   const PAGE_META = {
     home:      { label: "Overview", section: "Home", icon: "H" },
     live:      { label: "Live 2026", section: "Home", icon: "L" },
+    power:     { label: "Power Rankings", section: "Home", icon: "P" },
     history:   { label: "Season History", section: "League History", icon: "S" },
     managers:  { label: "Teams & Managers", section: "League History", icon: "M" },
     records:   { label: "Records & Analytics", section: "Games & Records", icon: "R" },
