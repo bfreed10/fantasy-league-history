@@ -36,6 +36,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
       items: [
         { page: "home", label: "Overview" },
         { page: "live", label: "Live 2026", live: true }
+        { page: "power", label: "Power Rankings" }
       ]
     },
     {
