@@ -80,16 +80,23 @@ function boxTeam(side,teams,week){
   const starterProj=players
     .filter(p=>p.starter&&p.projectedPoints!=null)
     .map(p=>p.projectedPoints);
+  const starterPoints=players
+  .filter(p=>p.starter&&p.points!=null)
+  .map(p=>p.points);
+
+const liveScore=starterPoints.length
+  ? starterPoints.reduce((a,b)=>a+b,0)
+  : null;
 
   return {
     teamId:Number(side?.teamId||0),
     team:teams[side?.teamId]?.name||
       (side?.teamId?`Team ${side.teamId}`:""),
     owner:teams[side?.teamId]?.owner||"",
-    score:finiteOrNull(
-      side?.totalPoints ??
-      side?.rosterForCurrentScoringPeriod?.appliedStatTotal
-    ),
+    score:
+  liveScore ??
+  finiteOrNull(side?.rosterForCurrentScoringPeriod?.appliedStatTotal) ??
+  finiteOrNull(side?.totalPoints),
     projectedScore:
       finiteOrNull(side?.totalProjectedPointsLive) ??
       (starterProj.length
