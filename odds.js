@@ -1,46 +1,23 @@
+function oddsPct(p){return `${Math.round(Number(p||0)*100)}%`}
+function oddsML(n){return Number(n)>0?`+${n}`:String(n)}
 function renderOdds(){
-  setHeader('LFL Odds','Hypothetical fantasy football lines, futures and fun markets. No real money.');
-  $('#content').innerHTML=`
-    <div class="hero">
-      <span class="section-eyebrow">LFL SPORTSBOOK</span>
-      <h2>Who is actually going to win this thing?</h2>
-      <p>Hypothetical odds based on current ESPN league data. <strong>No real money.</strong></p>
-    </div>
-    <div id="oddsStatus" class="card section-gap">Loading hypothetical odds…</div>
-    <div id="oddsBoard" class="section-gap"></div>
-  `;
-
-  fetch('/api/odds')
-    .then(r=>r.json())
-    .then(d=>{
-      if(d.error) throw new Error(d.error);
-      const teams=d.teams||[];
-      $('#oddsStatus').innerHTML=`<div class="card-heading-row"><div><span class="section-eyebrow">${d.season} FUTURES</span><h2>Championship &amp; Playoff Odds</h2></div><span class="muted">Model estimates</span></div>`;
-      $('#oddsBoard').innerHTML=`
-        <div class="card">
-          <div class="table-wrap"><table>
-            <thead><tr><th>Team</th><th>Record</th><th>Make Playoffs</th><th>Win Championship</th></tr></thead>
-            <tbody>${teams.map(t=>`
-              <tr>
-                <td><strong>${esc(t.name)}</strong></td>
-                <td>${t.wins}-${t.losses}</td>
-                <td><strong>${Math.round(t.playoffProbability*100)}%</strong> <span class="muted">(${t.playoffOdds>0?'+':''}${t.playoffOdds})</span></td>
-                <td><strong>${Math.round(t.championshipProbability*100)}%</strong> <span class="muted">(${t.championshipOdds>0?'+':''}${t.championshipOdds})</span></td>
-              </tr>`).join('')}</tbody>
-          </table></div>
-        </div>
-        <div class="card section-gap">
-          <span class="section-eyebrow">COMING NEXT</span>
-          <h2>Weekly Lines + Fun Futures</h2>
-          <p class="muted">Weekly spreads, moneylines, over/unders, highest scorer, biggest blowout, last-place odds, first to clinch and more.</p>
-        </div>
-      `;
-      setStatus('Hypothetical odds loaded','good');
-    })
-    .catch(err=>{
-      $('#oddsStatus').innerHTML=`<strong>Could not load odds.</strong><p class="muted">${esc(err.message)}</p>`;
-      setStatus('Odds unavailable','bad');
-    });
+  setHeader('LFL Odds','Hypothetical lines, futures and fun markets. No real money.');
+  $('#content').innerHTML=`<div class="hero"><span class="section-eyebrow">LFL SPORTSBOOK</span><h2>Who is actually going to win this thing?</h2><p>Model-driven fantasy football odds using current ESPN results, scoring history and the remaining schedule. <strong>No real money.</strong></p></div><div id="oddsRoot"><div class="card">Loading LFL odds…</div></div>`;
+  fetch('/api/odds').then(r=>r.json()).then(d=>{if(d.error)throw Error(d.error);renderOddsBoard(d)}).catch(e=>{$('#oddsRoot').innerHTML=`<div class="card"><strong>Could not load odds.</strong><p class="muted">${esc(e.message)}</p></div>`;setStatus('Odds unavailable','bad')});
 }
-
+function renderOddsBoard(d){
+ const weeks=[...new Set((d.weeklyLines||[]).map(x=>x.week))];
+ $('#oddsRoot').innerHTML=`
+ <div class="card section-gap"><div class="card-heading-row"><div><span class="section-eyebrow">${d.season} FUTURES</span><h2>Championship Futures</h2></div><span class="muted">${d.simulations.toLocaleString()} simulations</span></div><div class="table-wrap"><table><thead><tr><th>Team</th><th>Record</th><th>Make Playoffs</th><th>Make Final</th><th>Win It All</th></tr></thead><tbody>${d.teams.map((t,i)=>`<tr><td><strong>${i+1}. ${esc(t.name)}</strong></td><td>${t.wins}-${t.losses}${t.ties?`-${t.ties}`:''}</td><td>${oddsPct(t.playoffProbability)} <span class="muted">${oddsML(t.playoffOdds)}</span></td><td>${oddsPct(t.finalProbability)} <span class="muted">${oddsML(t.finalOdds)}</span></td><td><strong>${oddsPct(t.championshipProbability)}</strong> <span class="muted">${oddsML(t.championshipOdds)}</span></td></tr>`).join('')}</tbody></table></div></div>
+ <div class="card section-gap"><div class="card-heading-row"><div><span class="section-eyebrow">WEEKLY LINES</span><h2>Matchup Board</h2></div><label>Week <select id="oddsWeek">${weeks.map(w=>`<option value="${w}" ${w===d.currentWeek?'selected':''}>Week ${w}${w===d.currentWeek?' • Current':''}</option>`).join('')}</select></label></div><div id="oddsLines"></div></div>
+ <div class="card section-gap"><div class="card-heading-row"><div><span class="section-eyebrow">FUN FUTURES</span><h2>The Degenerate Corner</h2></div></div><div class="table-wrap"><table><thead><tr><th>Market</th><th>Favorite</th><th>Odds</th></tr></thead><tbody>
+ <tr><td>Finish 1st in regular season</td><td><strong>${esc(d.teams.slice().sort((a,b)=>b.firstPlaceProbability-a.firstPlaceProbability)[0]?.name||'—')}</strong></td><td>${oddsML(d.teams.slice().sort((a,b)=>b.firstPlaceProbability-a.firstPlaceProbability)[0]?.firstPlaceOdds)}</td></tr>
+ <tr><td>Finish last</td><td><strong>${esc(d.teams.slice().sort((a,b)=>b.lastPlaceProbability-a.lastPlaceProbability)[0]?.name||'—')}</strong></td><td>${oddsML(d.teams.slice().sort((a,b)=>b.lastPlaceProbability-a.lastPlaceProbability)[0]?.lastPlaceOdds)}</td></tr>
+ <tr><td>Highest scoring team</td><td><strong>${esc(d.fun.highestScoringTeam?.name||'—')}</strong></td><td class="muted">Avg ${d.fun.highestScoringTeam?.avgPoints||'—'} pts</td></tr>
+ <tr><td>Lowest scoring team</td><td><strong>${esc(d.fun.lowestScoringTeam?.name||'—')}</strong></td><td class="muted">Avg ${d.fun.lowestScoringTeam?.avgPoints||'—'} pts</td></tr>
+ </tbody></table></div></div>
+ <div class="card section-gap"><span class="section-eyebrow">HOUSE RULES</span><h2>How the LFL Book Works</h2><p class="muted">These are entertainment-only model lines. No wagers, deposits, withdrawals or real-money betting are supported. Odds update from ESPN data as the season moves along.</p></div>`;
+ const draw=()=>{const w=Number($('#oddsWeek').value);const lines=(d.weeklyLines||[]).filter(x=>x.week===w);$('#oddsLines').innerHTML=lines.length?`<div class="table-wrap"><table><thead><tr><th>Matchup</th><th>Projection</th><th>Spread</th><th>O/U</th><th>Moneyline</th></tr></thead><tbody>${lines.map(x=>`<tr><td><strong>${esc(x.home.name)}</strong><br><span class="muted">vs ${esc(x.away.name)}</span></td><td>${x.homeProjected} - ${x.awayProjected}</td><td>${esc(x.home.name)} ${x.spread>=0?'-':''}${Math.abs(x.spread)}</td><td>${x.total}</td><td>${esc(x.home.name)} ${oddsML(x.homeMoneyline)}<br>${esc(x.away.name)} ${oddsML(x.awayMoneyline)}</td></tr>`).join('')}</tbody></table></div>`:`<p class="muted">No scheduled matchups for this week.</p>`};
+ $('#oddsWeek').addEventListener('change',draw);draw();setStatus('LFL odds loaded','good');
+}
 pages.odds=renderOdds;
