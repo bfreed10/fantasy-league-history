@@ -28,11 +28,11 @@ module.exports=async(req,res)=>{try{
  for(const g of schedule){const w=num(g.matchupPeriodId),h=tm.get(g.home?.teamId),a=tm.get(g.away?.teamId);if(h&&a&&w>=currentWeek&&w<=regular)future.push({week:w,home:h,away:a})}
  const byWeek={};future.forEach(g=>(byWeek[g.week]??=[]).push(g));
  const N=6000,r=rng(currentWeek*10007+Number(season)),all=Object.values(teams),nPlay=Math.min(6,all.length);
- const P={},C={},F={},first={},last={},mostPF={};for(const t of all){P[t.id]=C[t.id]=F[t.id]=first[t.id]=last[t.id]=mostPF[t.id]=0}
+ const P={},C={},F={},first={},last={},mostPF={},tenWins={};for(const t of all){P[t.id]=C[t.id]=F[t.id]=first[t.id]=last[t.id]=mostPF[t.id]=tenWins[t.id]=0}
  for(let s=0;s<N;s++){
   const rec=Object.fromEntries(all.map(t=>[t.id,{w:t.wins+.5*t.ties,pf:num(data.teams?.find(x=>num(x.id)===t.id)?.record?.overall?.pointsFor)}]));
   for(let w=currentWeek;w<=regular;w++)for(const g of byWeek[w]||[]){const hs=Math.max(0,g.home.mean+g.home.sd*normal(r)),as=Math.max(0,g.away.mean+g.away.sd*normal(r));rec[g.home.id].pf+=hs;rec[g.away.id].pf+=as;if(hs>as)rec[g.home.id].w++;else if(as>hs)rec[g.away.id].w++;else{rec[g.home.id].w+=.5;rec[g.away.id].w+=.5}}
-  const st=all.slice().sort((a,b)=>rec[b.id].w-rec[a.id].w||rec[b.id].pf-rec[a.id].pf);st.slice(0,nPlay).forEach(t=>P[t.id]++);if(st[0])first[st[0].id]++;if(st.at(-1))last[st.at(-1).id]++;const topPF=all.slice().sort((a,b)=>rec[b.id].pf-rec[a.id].pf)[0];if(topPF)mostPF[topPF.id]++;
+  const st=all.slice().sort((a,b)=>rec[b.id].w-rec[a.id].w||rec[b.id].pf-rec[a.id].pf);st.slice(0,nPlay).forEach(t=>P[t.id]++);if(st[0])first[st[0].id]++;if(st.at(-1))last[st.at(-1).id]++;for(const t of all)if(rec[t.id].w>=10)tenWins[t.id]++;const topPF=all.slice().sort((a,b)=>rec[b.id].pf-rec[a.id].pf)[0];if(topPF)mostPF[topPF.id]++;
   const pool=st.slice(0,nPlay);let finalists=[];
   const win=(a,b)=>Math.max(0,a.mean+a.sd*normal(r))>=Math.max(0,b.mean+b.sd*normal(r))?a:b;
   if(pool.length>=6){
@@ -43,7 +43,7 @@ module.exports=async(req,res)=>{try{
   }
   if(finalists.length===2){F[finalists[0].id]++;F[finalists[1].id]++;const a=finalists[0],b=finalists[1];const pa=a.mean+a.sd*normal(r),pb=b.mean+b.sd*normal(r);C[(pa>=pb?a:b).id]++}else if(pool.length){F[pool[0].id]++;C[pool[0].id]++}
  }
- const rows=all.map(t=>{const p=P[t.id]/N,c=C[t.id]/N,f=F[t.id]/N,fp=first[t.id]/N,lp=last[t.id]/N,mp=mostPF[t.id]/N;return{id:t.id,name:t.name,wins:t.wins,losses:t.losses,ties:t.ties,avgPoints:+t.mean.toFixed(1),playoffProbability:p,championshipProbability:c,finalProbability:f,firstPlaceProbability:fp,lastPlaceProbability:lp,mostPointsProbability:mp,mostPointsOdds:american(mp),missPlayoffsProbability:1-p,missPlayoffsOdds:american(1-p),playoffOdds:american(p),championshipOdds:american(c),finalOdds:american(f),firstPlaceOdds:american(fp),lastPlaceOdds:american(lp)}}).sort((a,b)=>b.championshipProbability-a.championshipProbability);
+ const rows=all.map(t=>{const p=P[t.id]/N,c=C[t.id]/N,f=F[t.id]/N,fp=first[t.id]/N,lp=last[t.id]/N,mp=mostPF[t.id]/N;return{id:t.id,name:t.name,wins:t.wins,losses:t.losses,ties:t.ties,avgPoints:+t.mean.toFixed(1),playoffProbability:p,championshipProbability:c,finalProbability:f,firstPlaceProbability:fp,lastPlaceProbability:lp,mostPointsProbability:mp,mostPointsOdds:american(mp),missPlayoffsProbability:1-p,missPlayoffsOdds:american(1-p),tenWinsProbability:tenWins[t.id]/N,tenWinsOdds:american(tenWins[t.id]/N),playoffOdds:american(p),championshipOdds:american(c),finalOdds:american(f),firstPlaceOdds:american(fp),lastPlaceOdds:american(lp)}}).sort((a,b)=>b.championshipProbability-a.championshipProbability);
  const currentBoxParams=new URLSearchParams();['mMatchupScore','mBoxscore'].forEach(v=>currentBoxParams.append('view',v));
  currentBoxParams.set('scoringPeriodId',String(currentWeek));
  const projections={};
@@ -68,25 +68,29 @@ module.exports=async(req,res)=>{try{
  });
  const weeklyFun={};
  for(const [week,games] of Object.entries(byWeek)){
-  const high={},blowout={},closest={};let over=0;
+  const high={},blowout={},closest={},score150={};let over=0,anyUpset=0,anyThirty=0;
   const model=lines.filter(x=>x.week===Number(week));
   const B=3000,threshold=Math.round(model.reduce((n,x)=>n+x.homeProjected+x.awayProjected,0)/10)*10;
   for(let k=0;k<B;k++){
-    let bestScore=-1,bestId=null,big=-1,bigId=null,close=Infinity,closeId=null,leagueTotal=0;
+    let bestScore=-1,bestId=null,big=-1,bigId=null,close=Infinity,closeId=null,leagueTotal=0,upset=false,thirty=false;
     for(const g of games){const line=model.find(x=>x.home.id===g.home.id&&x.away.id===g.away.id);
       const h=Math.max(0,(line?.homeProjected??g.home.mean)+g.home.sd*normal(r));
       const a=Math.max(0,(line?.awayProjected??g.away.mean)+g.away.sd*normal(r));
       leagueTotal+=h+a;
+      if(h>=150)score150[g.home.id]=(score150[g.home.id]||0)+1;
+      if(a>=150)score150[g.away.id]=(score150[g.away.id]||0)+1;
+      if(Math.abs(h-a)>=30)thirty=true;
+      if((line?.homeWinProbability>=.65&&a>h)||(line?.awayWinProbability>=.65&&h>a))upset=true;
       for(const [id,score] of [[g.home.id,h],[g.away.id,a]])if(score>bestScore){bestScore=score;bestId=id}
       const margin=Math.abs(h-a);if(margin>big){big=margin;bigId=g.home.id+'-'+g.away.id}if(margin<close){close=margin;closeId=g.home.id+'-'+g.away.id}
     }
     if(bestId!=null)high[bestId]=(high[bestId]||0)+1;
     if(bigId)blowout[bigId]=(blowout[bigId]||0)+1;
     if(closeId)closest[closeId]=(closest[closeId]||0)+1;
-    if(leagueTotal>threshold)over++;
+    if(leagueTotal>threshold)over++;if(upset)anyUpset++;if(thirty)anyThirty++;
   }
   const pick=(counts,key)=>Object.entries(counts).map(([id,n])=>({id,probability:n/B,odds:priced(n/B),name:key==='team'?tm.get(Number(id))?.name:games.find(g=>id===g.home.id+'-'+g.away.id)?.home.name+' vs '+games.find(g=>id===g.home.id+'-'+g.away.id)?.away.name})).sort((a,b)=>b.probability-a.probability).slice(0,3);
-  weeklyFun[week]={highestScorer:pick(high,'team'),biggestBlowout:pick(blowout,'game'),closestGame:pick(closest,'game'),leagueTotal:threshold,overProbability:over/B,overOdds:priced(over/B),underOdds:priced(1-over/B)};
+  weeklyFun[week]={highestScorer:pick(high,'team'),biggestBlowout:pick(blowout,'game'),closestGame:pick(closest,'game'),leagueTotal:threshold,overProbability:over/B,overOdds:priced(over/B),underOdds:priced(1-over/B),anyUpsetProbability:anyUpset/B,anyUpsetOdds:priced(anyUpset/B),anyThirtyProbability:anyThirty/B,anyThirtyOdds:priced(anyThirty/B),score150:pick(score150,'team')};
  }
  const scorer=all.slice().sort((a,b)=>b.mean-a.mean);const played=all.reduce((x,t)=>x+t.scores.length,0)/2,total=all.reduce((x,t)=>x+t.scores.reduce((a,b)=>a+b,0),0);
  res.setHeader('Cache-Control','no-store');res.status(200).json({season:Number(season),currentWeek,regularSeasonWeeks:regular,hypothetical:true,simulations:N,teams:rows,weeklyLines:lines,weeklyFun,currentLines:lines.filter(x=>x.week===currentWeek),fun:{highestScoringTeam:scorer[0]?{name:scorer[0].name,avgPoints:+scorer[0].mean.toFixed(1)}:null,lowestScoringTeam:scorer.at(-1)?{name:scorer.at(-1).name,avgPoints:+scorer.at(-1).mean.toFixed(1)}:null,leagueAverageScore:played?+(total/played).toFixed(1):100},note:'Entertainment-only estimates. Current week blends ESPN live projections with scoring history when available; future weeks use regressed team scoring. Approximate 4.5% pricing margin. No real wagers.'});
