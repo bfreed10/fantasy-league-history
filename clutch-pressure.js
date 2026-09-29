@@ -9,6 +9,7 @@ window.LFL_CLUTCH_PRESSURE_VERSION = "v10.9";
   const baseRecordsPage = pages.records;
 
   function num(value) {
+    if (value == null || value === "") return null;
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
   }

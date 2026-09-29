@@ -424,16 +424,45 @@ function recordRows(items,type){
     return `<tr><td><strong>${value}</strong></td><td>${g.season} W${g.week}</td><td>${esc(g.awayTeam)} @ ${esc(g.homeTeam)}</td><td>${score}</td></tr>`;
   });
 }
+function recordArchive(matchups){
+  const num=v=>v==null||v===''?null:Number.isFinite(Number(v))?Number(v):null;
+  const seen=new Set();
+  return (matchups||[]).filter(g=>{
+    const home=num(g['Home Team ID']),away=num(g['Away Team ID']);
+    if(home==null||away==null||home<=0||away<=0||home===away||
+      num(g['Home Score'])==null||num(g['Away Score'])==null||
+      !['HOME','AWAY','TIE'].includes(String(g.Winner).toUpperCase()))return false;
+    const key=`${g.Season}|${g.Week}|${Math.min(home,away)}|${Math.max(home,away)}`;
+    if(seen.has(key))return false;seen.add(key);return true;
+  }).map(g=>({season:Number(g.Season),week:Number(g.Week),homeTeam:g['Home Team'],awayTeam:g['Away Team'],
+    homeScore:Number(g['Home Score']),awayScore:Number(g['Away Score']),stage:g['Playoff Tier']||'NONE',
+    highScore:Math.max(Number(g['Home Score']),Number(g['Away Score'])),
+    margin:Math.abs(Number(g['Home Score'])-Number(g['Away Score'])),
+    combined:Number(g['Home Score'])+Number(g['Away Score'])}));
+}
 function renderRecords(){
-  setHeader('League Records','Best, worst, closest and most ridiculous results.');
-  const high=recordRows(DATA.records.highestScores.slice(0,15),'score');
-  const blow=recordRows(DATA.records.biggestBlowouts.slice(0,15),'margin');
-  const close=recordRows(DATA.records.closestGames.slice(0,15),'margin');
-  $('#content').innerHTML=`<div class="grid-3">
-    <div class="card"><h3>Highest Scores</h3>${table(['Score','When','Matchup','Final'],high)}</div>
-    <div class="card"><h3>Biggest Blowouts</h3>${table(['Margin','When','Matchup','Final'],blow)}</div>
-    <div class="card"><h3>Closest Games</h3>${table(['Margin','When','Matchup','Final'],close)}</div>
-  </div>`;
+  setHeader('League Records','Complete decided-game archive, season records, streaks and player records.');
+  const games=recordArchive(DATA.matchups),years=[...new Set(games.map(g=>g.season))].sort((a,b)=>b-a);
+  $('#content').innerHTML=`<div class="card"><h2>Score & Matchup Records</h2>
+    <p class="muted">${games.length} decided matchups • ${years.at(-1)}–${years[0]}. Built from all saved games plus loaded live results. Byes, missing scores and undecided games are excluded. Highest scores includes both teams in each game.</p>
+    <div class="controls"><label>Season <select id="recordSeason"><option value="">All seasons</option>${years.map(y=>`<option>${y}</option>`).join('')}</select></label>
+    <label>Record <select id="recordCategory"><option value="high">Highest Scores</option><option value="low">Lowest Scores</option><option value="blow">Biggest Blowouts</option><option value="close">Closest Games</option><option value="combined">Highest Combined Scores</option></select></label>
+    <label>Rows <select id="recordLimit"><option value="25">25</option><option value="100">100</option><option value="all">All</option></select></label></div><div id="recordLeaderboard"></div></div>
+    <div class="card section-gap"><h2>Team Season Records</h2><p class="muted">Completed seasons only. Current-season points are available in Season History and the score explorer above.</p><div id="seasonRecordLeaderboard"></div></div>`;
+  const draw=()=>{
+    const season=$('#recordSeason').value,category=$('#recordCategory').value;
+    const filtered=games.filter(g=>!season||String(g.season)===season);
+    const individual=['high','low'].includes(category);
+    const ranked=(individual?filtered.flatMap(g=>[{...g,team:g.homeTeam,score:g.homeScore},{...g,team:g.awayTeam,score:g.awayScore}]):filtered).slice();
+    const value=g=>individual?g.score:category==='combined'?g.combined:g.margin;
+    ranked.sort((a,b)=>['low','close'].includes(category)?value(a)-value(b):value(b)-value(a));
+    const limit=$('#recordLimit').value,shown=limit==='all'?ranked:ranked.slice(0,Number(limit));
+    $('#recordLeaderboard').innerHTML=`<p class="muted">Showing ${shown.length} of ${ranked.length} qualifying records.</p>${table(['#',individual?'Team Points':category==='combined'?'Combined Points':'Margin','Season / Week',individual?'Scoring Team':'Matchup','Final','Stage'],shown.map((g,i)=>`<tr><td>${i+1}</td><td><strong>${fmt(value(g),2)}</strong></td><td>${g.season} W${g.week}</td><td>${esc(individual?g.team:g.awayTeam+' @ '+g.homeTeam)}</td><td>${fmt(g.awayScore,2)} – ${fmt(g.homeScore,2)}</td><td>${esc(g.stage)}</td></tr>`))}`;
+    const seasons=(DATA.teams||[]).filter(t=>Number(t['Final Rank'])>0&&(!season||String(t.Season)===season));
+    $('#seasonRecordLeaderboard').innerHTML=table(['#','Season','Franchise','Points For','Wins','Losses','Finish'],seasons.slice().sort((a,b)=>Number(b['Points For'])-Number(a['Points For'])).map((t,i)=>`<tr><td>${i+1}</td><td>${t.Season}</td><td>${displayFranchise(t['Team ID'],t['Team Name'],t['Owner(s)'])}</td><td>${fmt(t['Points For'],2)}</td><td>${t.Wins}</td><td>${t.Losses}</td><td>${t['Final Rank']}</td></tr>`));
+  };
+  for(const id of ['recordSeason','recordCategory','recordLimit'])$('#'+id).addEventListener('change',draw);
+  draw();
 }
 
 function draftPlayerCareers(picks){
@@ -492,7 +521,7 @@ function renderDraft(){
   const years=[...new Set(picks.map(x=>Number(x.Season)).filter(Boolean))].sort((a,b)=>b-a);
   const positions=[...new Set(picks.map(x=>x.Position).filter(Boolean))].sort();
   const playerCareers=draftPlayerCareers(picks), profiles=draftFranchiseProfiles(picks,A.classes||[]), repeats=repeatDraftees(picks);
-  const top=(A.topSteals||[])[0]||picks.filter(x=>x.ValueAboveSlot!=null).sort((a,b)=>Number(b.ValueAboveSlot)-Number(a.ValueAboveSlot))[0];
+  const top=Array.isArray(A.topSteals)?A.topSteals[0]:null;
   const best=(A.bestClasses||[])[0];
   const coverage=A.coveragePct!=null?Number(A.coveragePct):picks.filter(x=>x.ValueAboveSlot!=null).length/picks.length*100;
   $('#content').innerHTML=`

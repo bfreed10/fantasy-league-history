@@ -7,7 +7,7 @@
 window.LFL_PLAYER_RECORDS_FIX_VERSION = "v11.2";
 
 (function () {
-  if (!window.pages || typeof pages.records !== "function") return;
+  if (typeof pages === "undefined" || typeof pages.records !== "function") return;
 
   const baseRecordsPage = pages.records;
   const POSITION_BY_ID = {

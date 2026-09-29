@@ -6,7 +6,7 @@
 window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
 
 (function () {
-  if (!window.pages || typeof pages.draft !== "function") return;
+  if (typeof pages === "undefined" || typeof pages.draft !== "function") return;
 
   const baseDraftPage = pages.draft;
   const DATA_URL = "/data/draft_value_v14.json";
@@ -103,6 +103,11 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       n(injury.GamesPlayed) >= n(injury.EligibleFantasySeasonGames));
   }
 
+  function draftSteal(row) {
+    return n(row.r ?? row.Round) >= 3 && n(row.dc ?? row.DraftComparableCount) >= 10 &&
+      n(row.dv ?? row.DraftValuePercentile) >= 90 && n(row.sp ?? row.ActualPoints) != null;
+  }
+
   function performanceBust(row) {
     return healthySeason(row) && n(row.DraftValuePercentile ?? row.dv) != null &&
       n(row.DraftValuePercentile ?? row.dv) <= 10;
@@ -142,6 +147,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       return {
         ...original,
         Position: position,
+        ActualPoints: metric?.sp ?? null,
 
         // Keep the old fields for audit only.
         LegacyExpectedSlotPoints: original.ExpectedSlotPoints,
@@ -180,8 +186,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
 
     A.picks = corrected;
     A.topSteals = [...corrected]
-      .filter(p => n(p.DraftValuePercentile) != null)
-      .sort((a, b) => n(b.DraftValuePercentile) - n(a.DraftValuePercentile))
+      .filter(draftSteal)
+      .sort((a, b) => n(b.DraftValuePercentile) - n(a.DraftValuePercentile) || n(b.ActualPoints) - n(a.ActualPoints))
       .slice(0, 75);
 
     A.topBusts = [...corrected]
@@ -324,7 +330,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       n(row.sp) != null
     );
 
-    const best = [...rows].sort((a, b) => n(b.dv) - n(a.dv)).slice(0, 15);
+    const best = rows.filter(draftSteal).sort((a, b) => n(b.dv) - n(a.dv) || n(b.sp) - n(a.sp)).slice(0, 15);
     const worst = rows.filter(performanceBust).sort((a, b) => n(a.dv) - n(b.dv)).slice(0, 15);
 
     const make = list => list.map((row, index) => `
@@ -342,7 +348,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     return `
       <div class="draft-v141-grid">
         <div class="card">
-          <h2>Best Draft Outcomes</h2>
+          <h2>Biggest Draft Steals</h2><p class="muted">Round 3 or later, top 10% for position and draft round, and at least 10 historical comparables. Ranked by percentile, then season points. Percentile is not points above projection.</p>
           ${table14(["#","Player","Season Pts","Draft Value %ile","Label","Comparables","Drafted By"], make(best))}
         </div>
         <div class="card">
@@ -549,7 +555,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
         const h2 = card.querySelector("h2");
         if (h2) {
           const heading = h2.textContent.trim();
-          if (heading === "Biggest Steals") h2.textContent = "Best Draft Outcomes";
+          if (heading === "Biggest Steals") h2.textContent = "Biggest Draft Steals";
           if (heading === "Biggest Slot-Value Busts") h2.textContent = "Biggest Performance Busts";
           if (heading === "Best Drafting Franchises by Average Pick Value") h2.textContent = "Best Drafting Franchises by Avg Draft Value Score";
           if (heading === "Worst Slot Outcomes") h2.textContent = "Biggest Performance Busts";
@@ -572,7 +578,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
         ]);
 
         replaceHeader(tableEl, "Actual", "Player Season Pts");
-        replaceHeader(tableEl, "Value", "Draft Value Score");
+        replaceHeader(tableEl, "Value", "Draft Value Score (−50 to +50)");
         replaceHeader(tableEl, "Avg Value", "Avg Draft Score");
         replaceHeader(tableEl, "Total Value", "Total Draft Score");
         replaceHeader(tableEl, "Career Avg Value", "Career Avg Draft Score");
@@ -639,7 +645,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
         }
       })
       .catch(error => {
-        if (DATA?.draftAnalytics) DATA.draftAnalytics.topBusts = [];
+        if (DATA?.draftAnalytics) { DATA.draftAnalytics.topBusts = []; DATA.draftAnalytics.topSteals = []; }
         console.error("Draft Value v14.2 failed to load", error);
         baseDraftPage();
         if (typeof setStatus === "function") {
