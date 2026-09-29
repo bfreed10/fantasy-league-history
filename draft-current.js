@@ -33,7 +33,8 @@
       const delta = expected == null ? null : pairedActual - expected;
       const bust = verifiedOpportunity && expected > 0 && delta <= -35 && pairedActual <= expected*.75;
       return {...pick,position:now?.position || rows[0]?.position || '',status,actual,expected,pairedActual,delta,
-        observed:actualRows.length,paired:paired.length,totalWeeks:weeks.length,bust};
+        observed:actualRows.length,paired:paired.length,totalWeeks:weeks.length,bust,
+        steal:weeks.length>0 && paired.length===weeks.length && expected>0 && delta>=35 && pairedActual>=expected*1.25};
     });
   }
   async function json(url) {
@@ -73,6 +74,8 @@
         ${failed.length?`<p class="bad">Could not load W${failed.join(', W')}. Results below are partial.</p>`:''}
         <label>Drafting team <select id="currentDraftTeam"><option value="">All teams</option>${[...new Map(rows.map(p=>[p.teamId,p.team])).entries()].map(([id,name])=>`<option value="${safe(id)}">${safe(name)}</option>`).join('')}</select></label>
         <div id="currentDraftRows">${grid(rows)}</div>
+        <h3>Biggest Steals So Far</h3><p class="muted">Any round or position; at least 35 points and 25% above weekly ESPN projections across all completed weeks, with complete paired coverage. Early-season results are provisional; this is not a preseason full-season comparison.</p>
+        ${rows.some(p=>p.steal)?grid(rows.filter(p=>p.steal).sort((a,b)=>b.delta-a.delta)):'<p>No players currently clear the completed-week projection and coverage checks.</p>'}
         <h3>Biggest Performance Busts So Far</h3><p class="muted">Requires at least four completed weeks, complete paired coverage, positive output each week, a currently healthy player outside IR, and a shortfall of at least 35 points and 25%. Zero-output weeks and uncertain availability are excluded to avoid labeling injury losses as busts.</p>
         ${rows.some(p=>p.bust)?grid(rows.filter(p=>p.bust).sort((a,b)=>a.delta-b.delta)):'<p>No players currently clear the performance and availability checks.</p>'}`;
       root.querySelector('#currentDraftTeam').addEventListener('change',e=>{

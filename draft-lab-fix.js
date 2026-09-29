@@ -103,9 +103,31 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       n(injury.GamesPlayed) >= n(injury.EligibleFantasySeasonGames));
   }
 
-  function draftSteal(row) {
-    return n(row.r ?? row.Round) >= 3 && n(row.dc ?? row.DraftComparableCount) >= 10 &&
+  function stealCriteria(row) {
+    const expected = n(row.pep ?? row.V142ESPNPreseasonProjected);
+    const actual = n(row.pea ?? row.V142SeasonActual);
+    const delta = expected != null && actual != null ? actual - expected : null;
+    const projection = expected > 0 && delta >= 35 && actual >= expected * 1.25;
+    const draft = n(row.dc ?? row.DraftComparableCount) >= 10 &&
       n(row.dv ?? row.DraftValuePercentile) >= 90 && n(row.sp ?? row.ActualPoints) != null;
+    return {projection, draft, delta, badge:projection && draft ? 'Both' : projection ? 'Beat Projections' : 'Draft Value'};
+  }
+
+  function draftSteal(row) {
+    const c = stealCriteria(row);
+    return c.projection || c.draft;
+  }
+
+  function rankSteals(rows, sort = 'projection') {
+    return rows.filter(draftSteal).sort((a,b) => {
+      const ca=stealCriteria(a),cb=stealCriteria(b);
+      if(sort === 'draft') return (n(b.dv ?? b.DraftValuePercentile) ?? -1) - (n(a.dv ?? a.DraftValuePercentile) ?? -1) ||
+        (cb.delta ?? -Infinity) - (ca.delta ?? -Infinity);
+      if(ca.delta == null && cb.delta != null) return 1;
+      if(cb.delta == null && ca.delta != null) return -1;
+      return (cb.delta ?? 0) - (ca.delta ?? 0) ||
+        (n(b.dv ?? b.DraftValuePercentile) ?? -1) - (n(a.dv ?? a.DraftValuePercentile) ?? -1);
+    });
   }
 
   function performanceBust(row) {
@@ -185,10 +207,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     });
 
     A.picks = corrected;
-    A.topSteals = [...corrected]
-      .filter(draftSteal)
-      .sort((a, b) => n(b.DraftValuePercentile) - n(a.DraftValuePercentile) || n(b.ActualPoints) - n(a.ActualPoints))
-      .slice(0, 75);
+    A.topSteals = rankSteals(corrected).slice(0,75).map(p => ({...p,StealBadge:stealCriteria(p).badge}));
 
     A.topBusts = [...corrected]
       .filter(performanceBust)
@@ -330,7 +349,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       n(row.sp) != null
     );
 
-    const best = rows.filter(draftSteal).sort((a, b) => n(b.dv) - n(a.dv) || n(b.sp) - n(a.sp)).slice(0, 15);
+    const best = rankSteals(filteredMetrics(), document.querySelector("#dv141StealSort")?.value || "draftvalue");
     const worst = rows.filter(performanceBust).sort((a, b) => n(a.dv) - n(b.dv)).slice(0, 15);
 
     const make = list => list.map((row, index) => `
@@ -348,8 +367,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     return `
       <div class="draft-v141-grid">
         <div class="card">
-          <h2>Biggest Draft Steals</h2><p class="muted">Round 3 or later, top 10% for position and draft round, and at least 10 historical comparables. Ranked by percentile, then season points. Percentile is not points above projection.</p>
-          ${table14(["#","Player","Season Pts","Draft Value %ile","Label","Comparables","Drafted By"], make(best))}
+          <h2>Biggest Steals • Any Round & Position</h2><p class="muted">Qualifies by finishing at least 35 points and 25% above ESPN preseason expectation, or by a top-10% draft-value result with at least 10 comparables. Both = meets both tests. Missing projections sort last and are shown as unavailable.</p>
+          ${table14(["#","Player","Actual Season Pts","ESPN Preseason Projection","Points Above","Draft Value %ile","Qualifies Via","Comparables","Drafted By"], best.map((row,index)=>`<tr><td>${index+1}</td><td>${playerCell(row)}</td><td>${fmt14(row.pea ?? row.sp)}</td><td>${fmt14(row.pep)}</td><td>${signed14(stealCriteria(row).delta)}</td><td>${fmt14(row.dv)}th</td><td><span class="badge good">${stealCriteria(row).badge}</span></td><td>${row.dc}</td><td>${franchiseCell(row)}</td></tr>`))}
         </div>
         <div class="card">
           <h2>Biggest Performance Busts</h2><p class="muted">Bottom 10% for position and draft round, with verified full availability. Injury-shortened and unverified seasons are excluded.</p>
@@ -458,13 +477,14 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       </div>
 
       <div class="draft-v141-tabs">
-        <button type="button" class="active" data-dv141-tab="projection">ESPN Preseason Expected vs Actual</button>
-        <button type="button" data-dv141-tab="draftvalue">Draft Value Percentile</button>
+        <button type="button" data-dv141-tab="projection">ESPN Preseason Expected vs Actual</button>
+        <button type="button" class="active" data-dv141-tab="draftvalue">Steals & Draft Value</button>
         <button type="button" data-dv141-tab="production">Drafting-Team Production</button>
       </div>
 
       <div class="draft-v141-controls">
         <select id="dv141Season"><option value="">All seasons</option>${seasons.map(s => `<option value="${s}">${s}</option>`).join("")}</select>
+        <select id="dv141StealSort"><option value="projection">Steals: points above projection</option><option value="draft">Steals: draft-value percentile</option></select>
         <select id="dv141Position"><option value="">All positions</option>${positions.map(p => `<option value="${esc14(p)}">${esc14(p)}</option>`).join("")}</select>
       </div>
 
@@ -490,13 +510,13 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       button.addEventListener("click", () => renderDashboard(button.dataset.dv141Tab));
     });
 
-    ["dv141Season", "dv141Position"].forEach(id => {
+    ["dv141Season", "dv141Position", "dv141StealSort"].forEach(id => {
       root.querySelector(`#${id}`)?.addEventListener("change", () => {
-        renderDashboard(root.querySelector(".draft-v141-tabs button.active")?.dataset.dv141Tab || "projection");
+        renderDashboard(root.querySelector(".draft-v141-tabs button.active")?.dataset.dv141Tab || "draftvalue");
       });
     });
 
-    renderDashboard("projection");
+    renderDashboard("draftvalue");
   }
 
   function removeColumnByHeader(table, names) {
