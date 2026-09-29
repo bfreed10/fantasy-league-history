@@ -581,6 +581,17 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
   function renderEnhancedDraft() {
     applyModel();
     baseDraftPage();
+    const live=Object.values(window.liveHistorySnapshots||{}).sort((a,b)=>b.season-a.season);
+    for(const season of live){
+      const picks=season.draftPicks||[];
+      if(!picks.length)continue;
+      const card=document.createElement('details');
+      card.className='card section-gap';
+      card.innerHTML=`<summary><strong>${season.season} Draft Board</strong> • ${picks.length} ESPN picks</summary>
+        <p class="muted">Current-season picks are included here. Draft value grades require a completed season and are not assigned yet.</p>
+        ${table(['Pick','Player','Team'],picks.map(p=>`<tr><td>#${esc(p.overallPick)}</td><td>${esc(p.player)}</td><td>${esc(p.team)}</td></tr>`))}`;
+      document.querySelector('#content')?.prepend(card);
+    }
 
     installDashboard();
     postProcessBaseDraft();
@@ -589,7 +600,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     if (typeof setHeader === "function") {
       setHeader(
         "Draft Lab",
-        "ESPN preseason expected points, relative draft value, and actual drafting-team production across 2013–2025."
+        "Historical draft value grades and current-season ESPN draft boards."
       );
     }
     if (typeof setStatus === "function") {
