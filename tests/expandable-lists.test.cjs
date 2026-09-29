@@ -1,0 +1,12 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const items=Array.from({length:30},()=>({hidden:false}));
+let button,scan;
+const list={tagName:'TABLE',id:'',tBodies:[{rows:items}],insertAdjacentElement:(_,b)=>{b.isConnected=true;button=b;}};
+const content={querySelectorAll:()=>[list]};
+const context={document:{querySelector:()=>content,createElement:()=>({isConnected:false,hidden:false,textContent:'',attributes:{},setAttribute(k,v){this.attributes[k]=v;},addEventListener(_,fn){this.click=fn;}})},MutationObserver:class{constructor(fn){scan=fn;}observe(){}}};
+vm.createContext(context);vm.runInContext(fs.readFileSync(require('path').resolve(__dirname,'../expandable-lists.js'),'utf8'),context);
+assert.equal(items.filter(r=>!r.hidden).length,12);assert.equal(button.textContent,'Show all 30 rows');
+button.click();assert(items.every(r=>!r.hidden));assert.equal(button.attributes['aria-expanded'],'true');
+button.click();assert.equal(items.filter(r=>!r.hidden).length,12);
+list.tBodies[0].rows=items.slice(0,5);scan();assert(button.hidden);assert(list.tBodies[0].rows.every(r=>!r.hidden));
+console.log('PASS: 12-row preview, expand/collapse, accessibility state and filtered short lists.');

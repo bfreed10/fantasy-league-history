@@ -131,8 +131,12 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
   }
 
   function performanceBust(row) {
-    return healthySeason(row) && n(row.DraftValuePercentile ?? row.dv) != null &&
-      n(row.DraftValuePercentile ?? row.dv) <= 10;
+    if (!healthySeason(row)) return false;
+    const expected=n(row.pep ?? row.V142ESPNPreseasonProjected);
+    const actual=n(row.pea ?? row.V142SeasonActual);
+    const projection=expected>0 && actual!=null && actual-expected<=-35 && actual<=expected*.75;
+    const percentile=n(row.DraftValuePercentile ?? row.dv);
+    return projection || (percentile!=null && percentile<=10);
   }
 
   function loadV141() {
@@ -315,7 +319,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     const best = [...rows].sort((a, b) => n(b.ped) - n(a.ped)).slice(0, 15);
     const worst = rows.filter(row => healthySeason(row) && n(row.pep) > 0 &&
       n(row.ped) <= -35 && n(row.pea) <= n(row.pep) * 0.75)
-      .sort((a, b) => n(a.ped) - n(b.ped)).slice(0, 15);
+      .sort((a, b) => n(a.ped) - n(b.ped));
 
     const make = (list, good) => list.map((row, index) => `
       <tr>
@@ -350,7 +354,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     );
 
     const best = rankSteals(filteredMetrics(), document.querySelector("#dv141StealSort")?.value || "draftvalue");
-    const worst = rows.filter(performanceBust).sort((a, b) => n(a.dv) - n(b.dv)).slice(0, 15);
+    const worst = filteredMetrics().filter(performanceBust).sort((a, b) =>
+      (stealCriteria(a).delta ?? Infinity) - (stealCriteria(b).delta ?? Infinity) || n(a.dv) - n(b.dv));
 
     const make = list => list.map((row, index) => `
       <tr>
@@ -371,8 +376,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
           ${table14(["#","Player","Actual Season Pts","ESPN Preseason Projection","Points Above","Draft Value %ile","Qualifies Via","Comparables","Drafted By"], best.map((row,index)=>`<tr><td>${index+1}</td><td>${playerCell(row)}</td><td>${fmt14(row.pea ?? row.sp)}</td><td>${fmt14(row.pep)}</td><td>${signed14(stealCriteria(row).delta)}</td><td>${fmt14(row.dv)}th</td><td><span class="badge good">${stealCriteria(row).badge}</span></td><td>${row.dc}</td><td>${franchiseCell(row)}</td></tr>`))}
         </div>
         <div class="card">
-          <h2>Biggest Performance Busts</h2><p class="muted">Bottom 10% for position and draft round, with verified full availability. Injury-shortened and unverified seasons are excluded.</p>
-          ${table14(["#","Player","Season Pts","Draft Value %ile","Label","Comparables","Drafted By"], make(worst))}
+          <h2>Biggest Performance Busts</h2><p class="muted">Qualifies by at least 35 points and 25% below preseason projection, or a bottom-10% draft-value result. Both paths require verified full availability; injury-shortened and unverified seasons are excluded.</p>
+          ${table14(["#","Player","Actual Season Pts","Preseason Projection","Points Below/Above","Draft Value %ile","Drafted By"], worst.map((row,index)=>`<tr><td>${index+1}</td><td>${playerCell(row)}</td><td>${fmt14(row.pea ?? row.sp)}</td><td>${fmt14(row.pep)}</td><td class="bad">${signed14(stealCriteria(row).delta)}</td><td>${fmt14(row.dv)}th</td><td>${franchiseCell(row)}</td></tr>`))}
         </div>
       </div>
       <p class="draft-v141-note">Draft Value Percentile compares the player's season outcome only with other LFL picks at the same position and draft round. It is a relative draft result, <strong>not expected fantasy points</strong>.</p>
@@ -566,7 +571,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       const hero = [...content.querySelectorAll(".hero p")]
         .find(p => p.textContent.includes("Slot Value =") || p.textContent.includes("Draft Value"));
       if (hero) {
-        hero.innerHTML = `<strong>Expected Points = ESPN preseason full-season projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate. <strong>Biggest Performance Busts</strong> requires a bottom-10% result and verified full availability in the season shown; injury-shortened or unverified seasons are excluded.`;
+        hero.innerHTML = `<strong>Expected Points = ESPN preseason full-season projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate. <strong>Biggest Performance Busts</strong> requires a substantial projection shortfall or bottom-10% draft result, plus verified full availability in the season shown; injury-shortened or unverified seasons are excluded.`;
       }
 
       if (!panel) return;

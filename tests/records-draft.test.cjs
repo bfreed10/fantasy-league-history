@@ -5,7 +5,7 @@ const model=JSON.parse(fs.readFileSync('data/draft_value_v14.json'));
 const source=fs.readFileSync('draft-lab-fix.js','utf8');
 const context={window:{},DATA,document:{querySelector:()=>null},fetch:()=>{throw Error('unexpected fetch')}};vm.createContext(context);
 vm.runInContext('const pages={draft:()=>{},records:()=>{},injuries:()=>{}};window.originalDraft=pages.draft;',context);
-vm.runInContext(source.replace(/\}\)\(\);\s*$/, 'window.testDraft={applyModel,draftSteal,stealCriteria,rankSteals,setData:d=>V141=d};})();'),context);
+vm.runInContext(source.replace(/\}\)\(\);\s*$/, 'window.testDraft={applyModel,draftSteal,stealCriteria,rankSteals,performanceBust,setData:d=>V141=d};})();'),context);
 assert(!context.window.pages);assert(vm.runInContext('pages.draft !== window.originalDraft',context),'must activate with lexical pages');
 context.window.testDraft.setData(model);context.window.testDraft.applyModel();
 assert(DATA.draftAnalytics.topSteals.length>0);
@@ -29,3 +29,8 @@ assert(!f.draftSteal({...early,pea:130}));assert(!f.draftSteal({...early,pep:200
 assert(!f.draftSteal({...value,dc:9}));assert(!f.draftSteal({...early,pep:null,pea:null}));
 assert.equal(f.rankSteals([value,early])[0],early);assert.equal(f.rankSteals([value,early],'draft')[0],value);
 console.log('PASS: any round/position, both qualification paths, thresholds, unavailable projections and alternate sorting');
+
+const busts=model.picks.filter(f.performanceBust);
+assert(busts.length>7);assert(busts.some(r=>r.dv>10));
+for(const row of busts){const injury=DATA.injuryAnalytics.players.find(p=>p.Season===row.s&&p.PlayerId===row.pid);assert.equal(injury.InjuryGamesMissed,0);assert(injury.EligibleFantasySeasonGames>=injury.FantasyEndWeek-1);}
+console.log('PASS: combined bust criteria retain injury exclusions; '+busts.length+' eligible players.');
