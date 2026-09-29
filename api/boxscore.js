@@ -179,9 +179,10 @@ export default async function handler(req,res){
       ...new Set(
         (meta.schedule||[])
           .map(g=>Number(g.matchupPeriodId))
-          .filter(n=>Number.isFinite(n)&&n>0)
+          .filter(n=>Number.isFinite(n)&&n>0&&n<=currentWeek)
       )
     ].sort((a,b)=>a-b);
+    if(!availableWeeks.length) for(let w=1;w<=currentWeek;w++) availableWeeks.push(w);
 
     const requestedWeek=Number(req?.query?.week);
 
@@ -195,12 +196,7 @@ export default async function handler(req,res){
 
     const boxParams=new URLSearchParams();
 
-    [
-      "mMatchupScore",
-      "mBoxscore",
-      "mLiveScoring",
-      "mScoreboard"
-    ].forEach(v=>boxParams.append("view",v));
+    ["mMatchupScore","mBoxscore"].forEach(v=>boxParams.append("view",v));
 
     boxParams.set(
       "scoringPeriodId",
@@ -214,7 +210,9 @@ export default async function handler(req,res){
 
     const boxResponse=await fetch(
       `${base}?${boxParams.toString()}`,
-      {headers}
+      {headers:{...headers,"x-fantasy-filter":JSON.stringify({
+        schedule:{filterMatchupPeriodIds:{value:[selectedWeek]}}
+      })}}
     );
 
     if(!boxResponse.ok){
