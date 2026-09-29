@@ -71,6 +71,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
     const rosterOutput=[];
     const injuries=[];
     const playerNames={};
+    const scoringSamples=[];
 
     for (const t of data.teams || []) {
       const owner=(t.owners||[]).map(x=>members[x]||x).join(", ");
@@ -81,6 +82,11 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
         const p=playerObj(e); const pid=p.id ?? e.playerId ?? e?.playerPoolEntry?.id;
         const pname=p.fullName || p.name || (pid?`Player ${pid}`:"Unknown");
         if(pid) playerNames[pid]=pname;
+        for(const stat of (p.stats||[]).filter(s=>Number(s.scoringPeriodId)>0).slice(0,2)){
+          const applied=stat.appliedTotal??stat.appliedStatTotal;
+          if(Number(stat.scoringPeriodId)>0 && stat.stats && applied!=null && Number.isFinite(Number(applied)) && scoringSamples.length<60)
+            scoringSamples.push({position:p.defaultPositionId,stats:stat.stats,appliedTotal:Number(applied)});
+        }
         const status=p.injuryStatus || (p.injured?"INJURED":"ACTIVE");
         const position=POSITIONS[p.defaultPositionId] || "";
         const slot=SLOTS[e.lineupSlotId] || `Slot ${e.lineupSlotId ?? ""}`;
@@ -180,7 +186,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
     const transactions=rawTx.map(t=>({date:safeDate(t.processDate||t.proposedDate),team:teams[t.teamId]?.name||"League",type:t.type||"",status:t.status||"",items:(t.items||[]).map(i=>({type:i.type||"",action:i.type||"",playerId:i.playerId,player:playerNames[i.playerId]||`Player ${i.playerId||""}`,fromTeam:teams[i.fromTeamId]?.name||"",toTeam:teams[i.toTeamId]?.name||""}))}));
 
     res.setHeader("Cache-Control","no-store");
-    return res.status(200).json({leagueId:LEAGUE_ID,season,leagueName:data.name||"",currentWeek,draftPicks,matchups,completedMatchups,standings,rosters:rosterOutput,transactions,injuries,updatedAt:new Date().toISOString()});
+    return res.status(200).json({leagueId:LEAGUE_ID,season,leagueName:data.name||"",currentWeek,draftPicks,matchups,completedMatchups,standings,rosters:rosterOutput,transactions,injuries,scoringSettings:data.settings?.scoringSettings||null,scoringSamples,finalScoringPeriod:Number(data.status?.finalScoringPeriod||data.status?.finalScoringPeriodId||18),updatedAt:new Date().toISOString()});
   } catch (error) {
     return res.status(503).json({error:error.message||"Unknown server error"});
   }

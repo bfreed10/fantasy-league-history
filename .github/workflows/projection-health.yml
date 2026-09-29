@@ -1,0 +1,35 @@
+name: Projection source health
+on:
+  schedule:
+    - cron: '17 10 * * *'
+  workflow_dispatch:
+  deployment_status:
+permissions:
+  contents: read
+  deployments: read
+concurrency:
+  group: projection-source-health
+  cancel-in-progress: false
+jobs:
+  check:
+    if: github.event_name != 'deployment_status' || (github.event.deployment_status.state == 'success' && github.event.deployment.production_environment == true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Refresh and check live sources
+        env:
+          PROJECTION_SITE_URL: ${{ vars.PROJECTION_SITE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-projections.cjs
+      - name: Save health report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: projection-health
+          path: projection-health.json
+          if-no-files-found: ignore
+          retention-days: 30
