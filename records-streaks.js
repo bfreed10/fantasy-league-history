@@ -9,6 +9,7 @@ window.LFL_STREAKS_RECORDS_VERSION = "v10.8";
   const baseRecordsPage = pages.records;
 
   function num(value) {
+    if (value == null || value === "") return null;
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
   }

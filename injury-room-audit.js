@@ -19,7 +19,7 @@
 window.LFL_INJURY_ROOM_AUDIT_VERSION = "v11.4";
 
 (function () {
-  if (!window.pages || typeof pages.injuries !== "function") return;
+  if (typeof pages === "undefined" || typeof pages.injuries !== "function") return;
 
   const NON_INJURY_MARKERS = [
     "not injury related",
