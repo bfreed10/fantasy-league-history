@@ -21,6 +21,18 @@ function overallRecord(team){
 }
 function playerObj(entry){ return entry?.playerPoolEntry?.player || entry?.player || entry?.playerPoolEntry || {}; }
 function safeDate(v){ if(!v) return null; const n=Number(v); return Number.isFinite(n)?n:null; }
+function playerValue(entry,week){
+  const p=playerObj(entry), stats=[...(p.stats||[]),...(entry?.playerPoolEntry?.stats||[])];
+  const score=s=>Number(s?.appliedTotal ?? s?.appliedStatTotal);
+  const valid=s=>(s?.appliedTotal ?? s?.appliedStatTotal)!=null && Number.isFinite(score(s)) && score(s)>=0;
+  const projected=stats.find(s=>Number(s.scoringPeriodId)===Number(week) && Number(s.statSourceId)===1 && valid(s));
+  if(projected)return {weeklyValue:score(projected),valueSource:"ESPN weekly projection"};
+  const actual=stats.filter(s=>Number(s.statSourceId)===0 && Number(s.scoringPeriodId)>0 && Number(s.scoringPeriodId)<Number(week) && valid(s))
+    .sort((a,b)=>Number(a.scoringPeriodId)-Number(b.scoringPeriodId));
+  const recent=actual.slice(-3);
+  if(recent.length>=2)return {weeklyValue:recent.reduce((n,s)=>n+score(s),0)/recent.length,valueSource:`Last ${recent.length} completed weeks`};
+  return {weeklyValue:null,valueSource:null};
+}
 
 export default async function handler(req, res) {
   try {
@@ -35,6 +47,7 @@ export default async function handler(req, res) {
     const response = await fetch(`${base}?${params.toString()}`, {headers});
     if (!response.ok) return res.status(502).json({error:`ESPN returned HTTP ${response.status}: ${(await response.text()).slice(0,180)}`});
     const data = await response.json();
+    const currentWeek = data.status?.currentMatchupPeriod || data.status?.currentScoringPeriod || data.status?.latestScoringPeriod || null;
     const draftDetail = data.draftDetail || {};
 const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
 
@@ -57,7 +70,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
         const status=p.injuryStatus || (p.injured?"INJURED":"ACTIVE");
         const position=POSITIONS[p.defaultPositionId] || "";
         const slot=SLOTS[e.lineupSlotId] || `Slot ${e.lineupSlotId ?? ""}`;
-        players.push({player:pname,playerId:pid,position,slot,injuryStatus:status});
+        players.push({player:pname,playerId:pid,position,slot,injuryStatus:status,...playerValue(e,currentWeek)});
         if(status && !["ACTIVE","NORMAL","HEALTHY"].includes(String(status).toUpperCase())) injuries.push({player:pname,playerId:pid,position,team:name,status});
       }
       const counter=t.transactionCounter;
@@ -67,9 +80,29 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
         trades:Number(counter?.trades ?? 0)
       },transactionCountsAvailable:Boolean(counter)});
     }
+    if(currentWeek && rosterOutput.some(t=>t.players.some(p=>p.weeklyValue==null))){
+      try{
+        const q=new URLSearchParams({scoringPeriodId:String(currentWeek)});
+        q.append("view","mBoxscore");
+        const r=await fetch(`${base}?${q}`,{headers:{...headers,"x-fantasy-filter":JSON.stringify({
+          schedule:{filterMatchupPeriodIds:{value:[Number(currentWeek)]}}
+        })}});
+        if(r.ok){
+          const box=await r.json(), values=new Map();
+          for(const game of box.schedule||[])for(const side of [game.home,game.away])
+            for(const e of side?.rosterForCurrentScoringPeriod?.entries||side?.rosterForMatchupPeriod?.entries||[]){
+              const id=playerObj(e).id ?? e.playerId;
+              if(id!=null)values.set(String(id),playerValue(e,currentWeek));
+            }
+          for(const team of rosterOutput)for(const player of team.players){
+            if(player.weeklyValue==null && values.get(String(player.playerId))?.weeklyValue!=null)
+              Object.assign(player,values.get(String(player.playerId)));
+          }
+        }
+      }catch(_){/* Current roster remains available without player projections. */}
+    }
 
     const status = data.status || {};
-    const currentWeek = status.currentMatchupPeriod || status.currentScoringPeriod || status.latestScoringPeriod || null;
     const matchups=[];
     for(const game of data.schedule || []){
       const week=game.matchupPeriodId;
