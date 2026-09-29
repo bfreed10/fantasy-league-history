@@ -1,5 +1,6 @@
 import liveHandler from './live.js';
 import values from '../lib/trade-values.cjs';
+import scoring from '../lib/league-scoring.cjs';
 import fs from 'node:fs';
 import path from 'node:path';
 let sleeperCache=null;
@@ -30,13 +31,19 @@ export default async function handler(req,res){
     players=Object.fromEntries(Object.values(sleeperCache.data).filter(p=>p.espn_id!=null).map(p=>[String(p.espn_id),p]));
     sleeperStatus='Player metadata connected';
   }catch{}
-  const rosters=live.rosters.map(t=>({...t,players:t.players.map(p=>({...values.blendPlayer(p,feeds,live.season,live.currentWeek),
+  const rules=scoring.profile(live.scoringSettings),calibration=scoring.calibrate(live.scoringSamples||[],rules);
+  const context={profile:rules,calibration,endWeek:live.finalScoringPeriod};
+  const rosters=live.rosters.map(t=>({...t,players:t.players.map(p=>({...values.blendPlayer(p,feeds,live.season,live.currentWeek,Date.now(),context),
     platformIds:{espn:p.playerId,sleeper:players[String(p.playerId)]?.player_id??null,yahoo:players[String(p.playerId)]?.yahoo_id??null},
     sleeperInjuryStatus:players[String(p.playerId)]?.injury_status??null}))}));
+  const sourceCount=source=>rosters.flatMap(t=>t.players).filter(p=>p.valuationSources.some(s=>s.source===source)).length;
   const sourceStatus=[{source:'ESPN',status:'Connected',players:rosters.flatMap(t=>t.players).filter(p=>p.valuationSources.some(s=>s.source==='ESPN')).length},
-    ...values.sources.map(source=>({source,status:values.usable(feeds.sources?.[source],live.season,live.currentWeek)?'Projection feed active':'Projection feed not connected',
-      error:feedErrors[source],metadata:source==='Sleeper'?sleeperStatus:null,updatedAt:feeds.sources?.[source]?.updatedAt??null,
+    ...values.sources.map(source=>({source,status:sourceCount(source)>0?'Projection feed active':feeds.sources?.[source]?'Feed excluded: freshness, coverage or full scoring not verified':'Projection feed not connected',
+      error:feedErrors[source] || (feeds.sources?.[source] && sourceCount(source)===0 ?
+        !values.usable(feeds.sources[source],live.season,live.currentWeek)?'Season/week/freshness/feed-format validation failed':
+        feeds.sources[source].format==='league_points'&&feeds.sources[source].scoringHash!==rules?.hash?'Full league-scoring fingerprint mismatch':
+        feeds.sources[source].format==='espn_stat_ids'&&!calibration.verified?'ESPN scoring calibration unavailable or failed':'No uniquely matched players have complete scoring coverage':null),metadata:source==='Sleeper'?sleeperStatus:null,updatedAt:feeds.sources?.[source]?.updatedAt??null,
       players:rosters.flatMap(t=>t.players).filter(p=>p.valuationSources.some(s=>s.source===source)).length}))];
   res.setHeader('Cache-Control','no-store');
-  res.status(200).json({...live,rosters,sourceStatus,valuationScoring:{ppr:1,passTd:4,horizon:'ros_weekly'},valuationNote:'Equal-weight mean of available matching player estimates. Only current-week, current-season feeds with matching PPR/4-point passing-TD scoring and a common rest-of-season weekly horizon are included. Missing sources contribute no weight.'});
+  res.status(200).json({...live,rosters,sourceStatus,valuationScoring:{scoringHash:rules?.hash??null,items:rules?.items||[],options:rules?.options||{},calibration,horizon:'ros_weekly',endWeek:live.finalScoringPeriod},valuationNote:'Equal-weight mean of available matching player estimates. Feeds must match season/week and a common rest-of-season weekly horizon. Pre-scored feeds require the complete league-scoring fingerprint; raw stat-ID feeds must provide all scoring categories and remaining weeks and pass ESPN calibration. Missing sources contribute no weight.'});
 }
