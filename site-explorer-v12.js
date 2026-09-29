@@ -15,9 +15,11 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
 (function () {
   if (typeof pages === "undefined" || typeof navigate !== "function") return;
 
+  const liveSeason = new Date().getUTCFullYear() - (new Date().getUTCMonth() < 6 ? 1 : 0);
+  const liveLabel = `Live ${liveSeason}`;
   const PAGE_META = {
     home:      { label: "Overview", section: "Home", icon: "H" },
-    live:      { label: "Live 2026", section: "Home", icon: "L" },
+    live:      { label: liveLabel, section: "Home", icon: "L" },
     power:     { label: "Power Rankings", section: "Home", icon: "P" },
     history:   { label: "Season History", section: "League History", icon: "S" },
     managers:  { label: "Teams & Managers", section: "League History", icon: "M" },
@@ -35,7 +37,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
       section: "Home",
       items: [
         { page: "home", label: "Overview" },
-        { page: "live", label: "Live 2026", live: true }
+        { page: "live", label: liveLabel, live: true },
         { page: "power", label: "Power Rankings" }
       ]
     },
@@ -79,7 +81,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
   const SECTION_LINKS = {
     Home: [
       { page: "home", label: "Overview" },
-      { page: "live", label: "Live 2026" }
+      { page: "live", label: liveLabel }
     ],
     "League History": [
       { page: "history", label: "Seasons" },
@@ -106,7 +108,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
 
   const SEARCH_PAGES = [
     { page: "home", title: "League Overview", terms: "home overview champions trophy titles league" },
-    { page: "live", title: "Live 2026", terms: "live current matchups scores 2026" },
+    { page: "live", title: liveLabel, terms: `live current matchups scores ${liveSeason}` },
     { page: "history", title: "Season History", terms: "season standings history champions playoffs year" },
     { page: "managers", title: "Teams & Managers", terms: "manager owner franchise team all time leaders" },
     { page: "records", title: "Records & Analytics", terms: "records scores streaks clutch pressure explorer player records" },
@@ -482,7 +484,7 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
           <strong>Transactions</strong><span>Trades, adds, drops and historical transaction activity.</span>
         </button>
         <button class="lfl-explore-card" data-page="live">
-          <strong>Live 2026</strong><span>Current season gateway and live matchup data.</span>
+          <strong>${liveLabel}</strong><span>Current season gateway and live matchup data.</span>
         </button>
       </div>
     `;
@@ -528,9 +530,9 @@ window.LFL_SITE_EXPLORER_VERSION = "v12.0";
     }
     out.push({
       type: "Season",
-      title: "2026 Live Season",
-      subtitle: "Live 2026",
-      terms: "2026 live current season matchups",
+      title: `${liveSeason} Live Season`,
+      subtitle: liveLabel,
+      terms: `${liveSeason} live current season matchups`,
       action: () => navigate("live")
     });
 

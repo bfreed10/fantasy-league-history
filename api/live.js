@@ -1,11 +1,11 @@
 const LEAGUE_ID = "1147670";
 
 const now = new Date();
-const LIVE_SEASON = String(
+const LIVE_SEASON = String(process.env.LIVE_SEASON || (
   now.getUTCMonth() >= 6
     ? now.getUTCFullYear()
     : now.getUTCFullYear() - 1
-);
+));
 
 const POSITIONS = {1:"QB",2:"RB",3:"WR",4:"TE",5:"K",16:"D/ST"};
 const SLOTS = {0:"QB",2:"RB",4:"WR",6:"TE",16:"D/ST",17:"K",20:"Bench",21:"IR",23:"Flex"};
@@ -86,12 +86,13 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
 
     // Never expose lineup changes, pending/proposed activity,
     // failed waivers, or draft bookkeeping in Recent League Activity.
-    if(type==='ROSTER') return false;
+    if(type==='ROSTER' || type.includes('LINEUP')) return false;
     if(type==='DRAFT') return false;
     if(type.includes('PROPOSAL')) return false;
     if(type.includes('PENDING')) return false;
     if(type.includes('WAIVER_ERROR')) return false;
 
+    if(type.includes('WAIVER') && !t.processDate) return false;
     return true;
   })
   .slice()

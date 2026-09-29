@@ -21,6 +21,7 @@ function playerObj(entry){
 }
 
 function finiteOrNull(v){
+  if(v==null || v==="") return null;
   const n=Number(v);
   return Number.isFinite(n)?n:null;
 }
@@ -42,15 +43,19 @@ function weeklyProjection(entry,week){
     s=>Number(s.scoringPeriodId)===Number(week)
   );
 
-  const projected=
-    sameWeek.find(s=>Number(s.statSourceId)===1) ||
-    sameWeek.find(s=>Number(s.statTypeId)===2) ||
-    sameWeek.find(s=>Number(s.statTypeId)===1);
+  const projected=sameWeek.find(s=>Number(s.statSourceId)===1);
 
   return finiteOrNull(
     projected?.appliedTotal ??
     projected?.appliedStatTotal
   );
+}
+
+function weeklyActual(entry,week){
+  const pool=entry?.playerPoolEntry||{};
+  const stats=[...(pool.player?.stats||[]),...(pool.stats||[])];
+  const actual=stats.find(s=>Number(s.scoringPeriodId)===Number(week) && Number(s.statSourceId)===0);
+  return finiteOrNull(actual?.appliedTotal ?? actual?.appliedStatTotal);
 }
 
 function boxTeam(side,teams,week){
@@ -66,6 +71,7 @@ function boxTeam(side,teams,week){
       slot:SLOTS[slotId]||`Slot ${Number.isFinite(slotId)?slotId:""}`,
       starter:![20,21].includes(slotId),
       points:finiteOrNull(
+        weeklyActual(e,week) ??
         e?.playerPoolEntry?.appliedStatTotal ??
         e?.appliedStatTotal
       ),
@@ -94,9 +100,9 @@ const liveScore=starterPoints.length
       (side?.teamId?`Team ${side.teamId}`:""),
     owner:teams[side?.teamId]?.owner||"",
     score:
-  liveScore ??
+  finiteOrNull(side?.totalPoints) ??
   finiteOrNull(side?.rosterForCurrentScoringPeriod?.appliedStatTotal) ??
-  finiteOrNull(side?.totalPoints),
+  liveScore,
     projectedScore:
       finiteOrNull(side?.totalProjectedPointsLive) ??
       (starterProj.length
