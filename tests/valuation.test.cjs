@@ -1,0 +1,15 @@
+const assert=require('assert'),fs=require('fs'),vm=require('vm'),path=require('path');
+const {blendPlayer,usable}=require('../lib/trade-values.cjs');
+const now=Date.parse('2026-09-29T20:00:00Z'),feed={season:2026,week:4,horizon:'ros_weekly',scoring:{ppr:1,passTd:4},updatedAt:'2026-09-29T19:00:00Z',players:[{espnId:1,value:20}]};
+assert(usable(feed,2026,4,now));assert(!usable({...feed,week:3},2026,4,now));assert(!usable({...feed,scoring:{ppr:1,passTd:6}},2026,4,now));assert(!usable({...feed,updatedAt:'2026-09-01'},2026,4,now));
+const player={playerId:1,rosWeeklyValue:10};let result=blendPlayer(player,{sources:{Yahoo:feed,CBS:feed}},2026,4,now);assert.equal(result.rosWeeklyValue,50/3);assert.equal(result.valuationSources.length,3);
+assert.equal(blendPlayer(player,{sources:{}},2026,4,now).rosWeeklyValue,10);
+assert.equal(blendPlayer(player,{sources:{Yahoo:{...feed,players:[...feed.players,...feed.players]}}},2026,4,now).rosWeeklyValue,10);
+const c={};vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../trade-packages.js'),'utf8'),c);const f=c.LFLTradePackages;
+const p=(id,position,value)=>({playerId:id,player:'P'+id,position,rosWeeklyValue:value,injuryStatus:'ACTIVE',slot:'Bench'});
+const mine={teamId:1,players:[p(1,'QB',20),p(2,'RB',20),p(3,'RB',19),p(4,'RB',18),p(5,'WR',10),p(6,'WR',9),p(7,'TE',10),p(8,'RB',17),p(9,'RB',16)]};
+const other={teamId:2,players:[p(11,'QB',20),p(12,'RB',9),p(13,'RB',8),p(14,'WR',20),p(15,'WR',19),p(16,'WR',18),p(17,'TE',10),p(18,'WR',17),p(19,'WR',16)]};
+const offers=f.propose([mine,other],mine,4,{});assert(offers.length>0);assert(offers.every(o=>o.myGain>=.5&&o.theirGain>=.5&&o.gap<=.18));
+const protectedOffers=f.propose([mine,other],mine,4,{protected:['4','8','9']});assert(protectedOffers.every(o=>!o.givePlayers.some(p=>['4','8','9'].includes(String(p.playerId)))));
+const adjusted=f.after(mine.players,[mine.players[0]],[other.players[0],other.players[1]],[],4);assert.equal(adjusted.roster.length,mine.players.length);assert.equal(adjusted.drops.length,1);
+console.log('PASS: source blend, stale/mismatched/duplicate rejection, packages, protected assets, roster-space drops and two-sided gains.');

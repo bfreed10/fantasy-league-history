@@ -93,7 +93,7 @@ window.LFL_INJURY_ROOM_AUDIT_VERSION = "v11.4";
       (Array.isArray(row?.RosterStatuses) ? row.RosterStatuses : [])
         .map(x => text(x).toUpperCase())
     );
-    return statuses.has("RES") || statuses.has("RSR");
+    return statuses.has("RES") || statuses.has("RSR") || statuses.has("IR") || statuses.has("INJURED_RESERVE");
   }
 
   function suspensionStatus(row) {
@@ -194,6 +194,9 @@ window.LFL_INJURY_ROOM_AUDIT_VERSION = "v11.4";
       reasons.push("non-injury report label removed from injury total");
     }
 
+    const unverifiedTail = adjustedEligible < baseline;
+    if (unverifiedTail) { auditQuality = "Low"; reasons.push("truncated participation window; remaining availability unverified"); }
+
     if (!reasons.length) reasons.push("archived injury / participation row used directly");
 
     return {
@@ -210,10 +213,14 @@ window.LFL_INJURY_ROOM_AUDIT_VERSION = "v11.4";
       TailExtended: tailExtended,
       ReserveReclassified: reserveReclassified,
       NonInjuryCorrection: nonInjuryCorrection,
+      AvailabilityVerified: !unverifiedTail && auditQuality !== "Low",
+      UnverifiedTail: unverifiedTail,
       AuditQuality: auditQuality,
       AuditReasons: reasons
     };
   }
+
+  window.LFLInjuryAudit = {auditRow, rows:()=>buildRows()};
 
   function buildRows() {
     return (DATA?.injuryAnalytics?.players || []).map(auditRow);

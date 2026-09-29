@@ -17,5 +17,14 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/draft-performance.js": {
+      "maxDuration": 60
+    },
+    "api/trade-values.js": {
+      "maxDuration": 60,
+      "includeFiles": "data/trade_projection_feeds.json"
+    }
+  }
 }
