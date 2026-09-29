@@ -8,7 +8,7 @@ Do NOT add your ESPN cookies to any source file.
 The site expects these Vercel environment variables:
 - `ESPN_S2`
 - `SWID`
-- optional: `LIVE_SEASON` (defaults to `2026`)
+- optional: `LIVE_SEASON` (defaults to the current fantasy season, switching in July)
 
 ## Vercel
 1. Create/import this repository as a new Vercel project.
@@ -22,5 +22,5 @@ The site expects these Vercel environment variables:
 When Vercel is connected to the GitHub repository, pushes to the production branch automatically create new production deployments.
 
 ## Security
-`ESPN_S2` and `SWID` are read only inside `/api/live.py`.
+`ESPN_S2` and `SWID` are read only inside `/api/live.js` and `/api/boxscore.js`.
 The browser gets only sanitized live matchup JSON.

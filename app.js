@@ -1,5 +1,6 @@
 
 let DATA=null;
+const LIVE_YEAR = new Date().getUTCFullYear() - (new Date().getUTCMonth() < 6 ? 1 : 0);
 let currentPage='home';
 let liveTimer=null;
 
@@ -162,7 +163,7 @@ function topManager(){
 }
 
 function renderHome(){
-  setHeader('League Overview','The LFL trophy case, all-time leaders, and live 2026 gateway.');
+  setHeader('League Overview',`The LFL trophy case, all-time leaders, and live ${LIVE_YEAR} gateway.`);
 
   const franchises=franchiseStats();
   const champions=[...(DATA?.champions||[])].sort((a,b)=>Number(a.season)-Number(b.season));
@@ -219,9 +220,9 @@ function renderHome(){
       <div class="league-hero-main">
         <div class="hero-eyebrow">LAKELANDS FANTASY LEAGUE • EST. 2013</div>
         <h2>13 seasons of history.<br><span>One trophy case.</span></h2>
-        <p>Every completed season, franchise record, rivalry, draft class and league record in one place — with the 2026 season connected live to ESPN.</p>
+        <p>Every completed season, franchise record, rivalry, draft class and league record in one place — with the ${LIVE_YEAR} season connected live to ESPN.</p>
         <div class="hero-actions">
-          <button class="hero-action primary" onclick="navigate('live')">Open Live 2026</button>
+          <button class="hero-action primary" onclick="navigate('live')">Open Live ${LIVE_YEAR}</button>
           <button class="hero-action" onclick="navigate('draft')">Explore Draft Lab</button>
           <button class="hero-action" onclick="navigate('managers')">All-Time Leaders</button>
         </div>
@@ -284,7 +285,7 @@ function renderHome(){
 }
 
 async function renderLive(){
-  setHeader('Live 2026','Current standings, rosters, matchups, transactions and injuries from ESPN.');
+  setHeader(`Live ${LIVE_YEAR}`,'Current standings, rosters, matchups, transactions and injuries from ESPN.');
   $('#content').innerHTML=`<div class="hero"><h2>Live League Command Center</h2><p>The browser only calls your Vercel server function. ESPN credentials remain server-side and are never returned to visitors.</p></div><div id="liveArea" class="empty">Connecting to ESPN…</div>`;
   await refreshLive();
   clearInterval(liveTimer); liveTimer=setInterval(refreshLive,30000);
@@ -684,7 +685,7 @@ function renderTrades(){
       <div class="transaction-status-row">
         <span class="badge good">2013–2025 summary counters ready</span>
         <span class="badge ${recovered.length?'good':'warn'}">${recovered.length?`${recovered.length} verified packages loaded`:'Package grading not loaded yet'}</span>
-        <button class="inline-action" onclick="navigate('live')">Open live 2026 activity →</button>
+        <button class="inline-action" onclick="navigate('live')">Open live ${LIVE_YEAR} activity →</button>
       </div>
     </div>
 
@@ -1183,7 +1184,7 @@ function renderData(){
     ['Draft picks','Complete IDs + names','good'],
     ['Draft actual season points',`${draft.coveragePct??'—'}% coverage`,Number(draft.coveragePct)>=99?'good':'warn'],
     ['Draft Lab value model',draft.topSteals?.length?'Live':'Pending',draft.topSteals?.length?'good':'warn'],
-    ['Live 2026 matchups / standings / rosters','Server-side ESPN connection','good'],
+    [`Live ${LIVE_YEAR} matchups / standings / rosters`,'Server-side ESPN connection','good'],
     ['Historical transaction summary counters','Acquisitions / drops / trade counts complete','good'],
     ['Historical individual trade packages',(trade.trades||[]).length?`${trade.trades.length} checksum-verified + graded`:'Run Trade Center v10 local enricher',(trade.trades||[]).length?'good':'warn'],
     ['Injury / availability enrichment',(injury.players||[]).length?`${injury.players.length} player-season rows`:'Pending',(injury.players||[]).length?'good':'warn'],

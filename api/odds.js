@@ -8,7 +8,7 @@ function rng(seed){let x=seed>>>0;return()=>{x=(x*1664525+1013904223)>>>0;return
 function normal(r){let u=0,v=0;while(!u)u=r();while(!v)v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
 
 module.exports=async(req,res)=>{try{
- const season=seasonNow(),s2=(process.env.ESPN_S2||'').trim(),swid=(process.env.SWID||'').trim();
+ const season=String(process.env.LIVE_SEASON||seasonNow()),s2=(process.env.ESPN_S2||'').trim(),swid=(process.env.SWID||'').trim();
  if(!s2||!swid)return res.status(503).json({error:'ESPN credentials are not configured.'});
  const base=`https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${LEAGUE_ID}`;
  const headers={"User-Agent":"Mozilla/5.0","Accept":"application/json","Cookie":`espn_s2=${s2}; SWID=${swid}`};
@@ -20,14 +20,17 @@ module.exports=async(req,res)=>{try{
  const schedule=Array.isArray(data.schedule)?data.schedule:[];
  for(const g of schedule){const h=teams[g.home?.teamId],a=teams[g.away?.teamId];if(!h||!a)continue;const hs=num(g.home?.totalPoints),as=num(g.away?.totalPoints);if(g.matchupPeriodId<currentWeek&&(hs||as)){h.scores.push(hs);a.scores.push(as)}}
  const regular=num(data.settings?.scheduleSettings?.numberOfRegularSeasonMatchups||data.settings?.scheduleSettings?.numRegularSeasonMatchups)||14;
- for(const t of Object.values(teams)){t.mean=t.scores.length?avg(t.scores):100;t.mean=Math.max(50,t.mean);t.sd=sd(t.scores)}
+ const scored=Object.values(teams).flatMap(t=>t.scores);
+ const leagueMean=scored.length?avg(scored):110;
+ const leagueSd=scored.length>3?sd(scored):28;
+ for(const t of Object.values(teams)){const n=t.scores.length;t.mean=(t.scores.reduce((a,b)=>a+b,0)+4*leagueMean)/(n+4);t.sd=Math.max(16,Math.min(55,n>=3?Math.sqrt((n*sd(t.scores)**2+4*leagueSd**2)/(n+4)):leagueSd))}
  const tm=new Map(Object.values(teams).map(t=>[t.id,t])), future=[];
  for(const g of schedule){const w=num(g.matchupPeriodId),h=tm.get(g.home?.teamId),a=tm.get(g.away?.teamId);if(h&&a&&w>=currentWeek&&w<=regular)future.push({week:w,home:h,away:a})}
  const byWeek={};future.forEach(g=>(byWeek[g.week]??=[]).push(g));
  const N=6000,r=rng(currentWeek*10007+Number(season)),all=Object.values(teams),nPlay=Math.min(6,all.length);
  const P={},C={},F={},first={},last={};for(const t of all){P[t.id]=C[t.id]=F[t.id]=first[t.id]=last[t.id]=0}
  for(let s=0;s<N;s++){
-  const rec=Object.fromEntries(all.map(t=>[t.id,{w:t.wins,pf:t.scores.reduce((a,b)=>a+b,0)}]));
+  const rec=Object.fromEntries(all.map(t=>[t.id,{w:t.wins+.5*t.ties,pf:num(data.teams?.find(x=>num(x.id)===t.id)?.record?.overall?.pointsFor)}]));
   for(let w=currentWeek;w<=regular;w++)for(const g of byWeek[w]||[]){const hs=Math.max(0,g.home.mean+g.home.sd*normal(r)),as=Math.max(0,g.away.mean+g.away.sd*normal(r));rec[g.home.id].pf+=hs;rec[g.away.id].pf+=as;if(hs>as)rec[g.home.id].w++;else if(as>hs)rec[g.away.id].w++;else{rec[g.home.id].w+=.5;rec[g.away.id].w+=.5}}
   const st=all.slice().sort((a,b)=>rec[b.id].w-rec[a.id].w||rec[b.id].pf-rec[a.id].pf);st.slice(0,nPlay).forEach(t=>P[t.id]++);if(st[0])first[st[0].id]++;if(st.at(-1))last[st.at(-1).id]++;
   const pool=st.slice(0,nPlay);let finalists=[];
@@ -35,7 +38,28 @@ module.exports=async(req,res)=>{try{
   if(finalists.length===2){F[finalists[0].id]++;F[finalists[1].id]++;const a=finalists[0],b=finalists[1];const pa=a.mean+a.sd*normal(r),pb=b.mean+b.sd*normal(r);C[(pa>=pb?a:b).id]++}else if(pool.length){F[pool[0].id]++;C[pool[0].id]++}
  }
  const rows=all.map(t=>{const p=P[t.id]/N,c=C[t.id]/N,f=F[t.id]/N,fp=first[t.id]/N,lp=last[t.id]/N;return{id:t.id,name:t.name,wins:t.wins,losses:t.losses,ties:t.ties,avgPoints:+t.mean.toFixed(1),playoffProbability:p,championshipProbability:c,finalProbability:f,firstPlaceProbability:fp,lastPlaceProbability:lp,playoffOdds:american(p),championshipOdds:american(c),finalOdds:american(f),firstPlaceOdds:american(fp),lastPlaceOdds:american(lp)}}).sort((a,b)=>b.championshipProbability-a.championshipProbability);
- const lines=future.map(g=>{const diff=g.home.mean-g.away.mean,total=g.home.mean+g.away.mean;const hw=1/(1+Math.exp(-diff/Math.max(10,(g.home.sd+g.away.sd)/2)));return{week:g.week,home:{id:g.home.id,name:g.home.name},away:{id:g.away.id,name:g.away.name},homeProjected:+g.home.mean.toFixed(1),awayProjected:+g.away.mean.toFixed(1),spread:+diff.toFixed(1),total:+total.toFixed(1),homeWinProbability:hw,awayWinProbability:1-hw,homeMoneyline:american(hw),awayMoneyline:american(1-hw)}});
+ const currentBoxParams=new URLSearchParams();['mMatchupScore','mBoxscore'].forEach(v=>currentBoxParams.append('view',v));
+ currentBoxParams.set('scoringPeriodId',String(currentWeek));
+ const projections={};
+ try{
+  const br=await fetch(`${base}?${currentBoxParams}`,{headers:{...headers,'x-fantasy-filter':JSON.stringify({schedule:{filterMatchupPeriodIds:{value:[currentWeek]}}})}});
+  if(br.ok){const bd=await br.json();for(const g of bd.schedule||[])for(const side of [g.home,g.away]){
+   const id=num(side?.teamId),projection=Number(side?.totalProjectedPointsLive);
+   if(id&&Number.isFinite(projection)&&projection>0)projections[id]=projection;
+  }}
+ }catch(_){/* Historical model remains available when ESPN projections fail. */}
+ const cdf=z=>{const sign=z<0?-1:1,x=Math.abs(z)/Math.SQRT2,t=1/(1+.3275911*x),erf=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-.284496736)*t+.254829592)*t*Math.exp(-x*x);return .5*(1+sign*erf)};
+ const priced=p=>american(Math.max(.01,Math.min(.99,p*1.045)));
+ const lines=future.map(g=>{
+  const current=g.week===currentWeek;
+  const hm=current&&projections[g.home.id]?projections[g.home.id]*.8+g.home.mean*.2:g.home.mean;
+  const am=current&&projections[g.away.id]?projections[g.away.id]*.8+g.away.mean*.2:g.away.mean;
+  const sdDiff=Math.hypot(g.home.sd,g.away.sd),diff=hm-am,total=hm+am;
+  const hw=cdf(diff/sdDiff),homeSpread=Math.round(diff*2)/2,overProbability=cdf((total-(Math.round(total*2)/2))/sdDiff);
+  const altSpreads=[-20,-10,0,10,20].map(line=>({line,homeCoverProbability:cdf((diff-line)/sdDiff),homeOdds:priced(cdf((diff-line)/sdDiff)),awayOdds:priced(1-cdf((diff-line)/sdDiff))}));
+  const altTotals=[-20,-10,0,10,20].map(offset=>{const line=Math.round((total+offset)*2)/2,p=cdf((total-line)/sdDiff);return{line,overProbability:p,overOdds:priced(p),underOdds:priced(1-p)}});
+  return{week:g.week,home:{id:g.home.id,name:g.home.name},away:{id:g.away.id,name:g.away.name},homeProjected:+hm.toFixed(1),awayProjected:+am.toFixed(1),projectionSource:current&&projections[g.home.id]&&projections[g.away.id]?'ESPN live projections + scoring history':'Scoring history',spread:homeSpread,total:Math.round(total*2)/2,homeWinProbability:hw,awayWinProbability:1-hw,homeMoneyline:priced(hw),awayMoneyline:priced(1-hw),homeSpreadOdds:priced(cdf((diff-homeSpread)/sdDiff)),awaySpreadOdds:priced(1-cdf((diff-homeSpread)/sdDiff)),overOdds:priced(overProbability),underOdds:priced(1-overProbability),altSpreads,altTotals};
+ });
  const scorer=all.slice().sort((a,b)=>b.mean-a.mean);const played=all.reduce((x,t)=>x+t.scores.length,0)/2,total=all.reduce((x,t)=>x+t.scores.reduce((a,b)=>a+b,0),0);
- res.setHeader('Cache-Control','no-store');res.status(200).json({season:Number(season),currentWeek,regularSeasonWeeks:regular,hypothetical:true,simulations:N,teams:rows,weeklyLines:lines,currentLines:lines.filter(x=>x.week===currentWeek),fun:{highestScoringTeam:scorer[0]?{name:scorer[0].name,avgPoints:+scorer[0].mean.toFixed(1)}:null,lowestScoringTeam:scorer.at(-1)?{name:scorer.at(-1).name,avgPoints:+scorer.at(-1).mean.toFixed(1)}:null,leagueAverageScore:played?+(total/played).toFixed(1):100},note:'Hypothetical no-money fantasy odds using current records, scoring history and remaining ESPN schedule.'});
+ res.setHeader('Cache-Control','no-store');res.status(200).json({season:Number(season),currentWeek,regularSeasonWeeks:regular,hypothetical:true,simulations:N,teams:rows,weeklyLines:lines,currentLines:lines.filter(x=>x.week===currentWeek),fun:{highestScoringTeam:scorer[0]?{name:scorer[0].name,avgPoints:+scorer[0].mean.toFixed(1)}:null,lowestScoringTeam:scorer.at(-1)?{name:scorer.at(-1).name,avgPoints:+scorer.at(-1).mean.toFixed(1)}:null,leagueAverageScore:played?+(total/played).toFixed(1):100},note:'Entertainment-only estimates. Current week blends ESPN live projections with scoring history when available; future weeks use regressed team scoring. Approximate 4.5% pricing margin. No real wagers.'});
 }catch(e){res.status(500).json({error:e.message||'Odds calculation failed'})}};

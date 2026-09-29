@@ -21,6 +21,7 @@ function playerObj(entry){
 }
 
 function finiteOrNull(v){
+  if(v==null || v==="") return null;
   const n=Number(v);
   return Number.isFinite(n)?n:null;
 }
@@ -42,15 +43,19 @@ function weeklyProjection(entry,week){
     s=>Number(s.scoringPeriodId)===Number(week)
   );
 
-  const projected=
-    sameWeek.find(s=>Number(s.statSourceId)===1) ||
-    sameWeek.find(s=>Number(s.statTypeId)===2) ||
-    sameWeek.find(s=>Number(s.statTypeId)===1);
+  const projected=sameWeek.find(s=>Number(s.statSourceId)===1);
 
   return finiteOrNull(
     projected?.appliedTotal ??
     projected?.appliedStatTotal
   );
+}
+
+function weeklyActual(entry,week){
+  const pool=entry?.playerPoolEntry||{};
+  const stats=[...(pool.player?.stats||[]),...(pool.stats||[])];
+  const actual=stats.find(s=>Number(s.scoringPeriodId)===Number(week) && Number(s.statSourceId)===0);
+  return finiteOrNull(actual?.appliedTotal ?? actual?.appliedStatTotal);
 }
 
 function boxTeam(side,teams,week){
@@ -66,6 +71,7 @@ function boxTeam(side,teams,week){
       slot:SLOTS[slotId]||`Slot ${Number.isFinite(slotId)?slotId:""}`,
       starter:![20,21].includes(slotId),
       points:finiteOrNull(
+        weeklyActual(e,week) ??
         e?.playerPoolEntry?.appliedStatTotal ??
         e?.appliedStatTotal
       ),
@@ -94,9 +100,9 @@ const liveScore=starterPoints.length
       (side?.teamId?`Team ${side.teamId}`:""),
     owner:teams[side?.teamId]?.owner||"",
     score:
-  liveScore ??
+  finiteOrNull(side?.totalPoints) ??
   finiteOrNull(side?.rosterForCurrentScoringPeriod?.appliedStatTotal) ??
-  finiteOrNull(side?.totalPoints),
+  liveScore,
     projectedScore:
       finiteOrNull(side?.totalProjectedPointsLive) ??
       (starterProj.length
@@ -173,9 +179,10 @@ export default async function handler(req,res){
       ...new Set(
         (meta.schedule||[])
           .map(g=>Number(g.matchupPeriodId))
-          .filter(n=>Number.isFinite(n)&&n>0)
+          .filter(n=>Number.isFinite(n)&&n>0&&n<=currentWeek)
       )
     ].sort((a,b)=>a-b);
+    if(!availableWeeks.length) for(let w=1;w<=currentWeek;w++) availableWeeks.push(w);
 
     const requestedWeek=Number(req?.query?.week);
 
@@ -189,12 +196,7 @@ export default async function handler(req,res){
 
     const boxParams=new URLSearchParams();
 
-    [
-      "mMatchupScore",
-      "mBoxscore",
-      "mLiveScoring",
-      "mScoreboard"
-    ].forEach(v=>boxParams.append("view",v));
+    ["mMatchupScore","mBoxscore"].forEach(v=>boxParams.append("view",v));
 
     boxParams.set(
       "scoringPeriodId",
@@ -208,7 +210,9 @@ export default async function handler(req,res){
 
     const boxResponse=await fetch(
       `${base}?${boxParams.toString()}`,
-      {headers}
+      {headers:{...headers,"x-fantasy-filter":JSON.stringify({
+        schedule:{filterMatchupPeriodIds:{value:[selectedWeek]}}
+      })}}
     );
 
     if(!boxResponse.ok){
