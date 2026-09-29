@@ -60,7 +60,12 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
         players.push({player:pname,playerId:pid,position,slot,injuryStatus:status});
         if(status && !["ACTIVE","NORMAL","HEALTHY"].includes(String(status).toUpperCase())) injuries.push({player:pname,playerId:pid,position,team:name,status});
       }
-      rosterOutput.push({teamId:t.id,team:name,owner,players});
+      const counter=t.transactionCounter;
+      rosterOutput.push({teamId:t.id,team:name,owner,players,transactionCounts:{
+        acquisitions:Number(counter?.acquisitions ?? counter?.acquisition ?? 0),
+        drops:Number(counter?.drops ?? 0),
+        trades:Number(counter?.trades ?? 0)
+      },transactionCountsAvailable:Boolean(counter)});
     }
 
     const status = data.status || {};

@@ -568,10 +568,13 @@ function renderDraft(){
 }
 
 
+function transactionTeamRows(){
+  return [...(DATA?.teams||[]),...(window.liveTransactionTeams||[])];
+}
 function transactionSummary(){
   const seasonMap=new Map(), franchiseMap=new Map();
 
-  for(const x of DATA?.teams||[]){
+  for(const x of transactionTeamRows()){
     const season=Number(x.Season), id=teamId(x['Team ID']);
     const acquisitions=Number(x.Acquisitions||0);
     const drops=Number(x.Drops||0);
@@ -673,7 +676,7 @@ function renderTrades(){
 
   $('#content').innerHTML=`
     <div class="metrics">
-      ${metric('Historical acquisitions',fmt(T.acquisitions),'ESPN team counters • 2013–2025')}
+      ${metric('Historical acquisitions',fmt(T.acquisitions),`ESPN team counters • through ${window.liveTransactionTeams?.length?LIVE_YEAR:2025}`)}
       ${metric('Completed trades',tradeCountText(T.completedTrades),`${fmt(T.tradeParticipations)} team participations`)}
       ${metric('Most active add season',busiest?.Season??'—',busiest?`${fmt(busiest.Acquisitions)} acquisitions`:'')}
       ${metric('Highest trade season',tradePeak?.Season??'—',tradePeak?`${tradeCountText(tradePeak.CompletedTrades)} completed trades`:'')}
@@ -683,7 +686,7 @@ function renderTrades(){
       <h2>${recovered.length?'Verified trade packages + realized value':'Trade counts verified; package recovery awaiting local ESPN pass'}</h2>
       <p><strong>Always verified:</strong> every franchise-season's ESPN acquisition, drop and trade counters. ${recovered.length?`<strong>Package grading:</strong> ${recovered.length} completed trades passed the season/team checksum and are graded below using actual rest-of-season points versus ESPN expected rest-of-season points. Seasons that fail the checksum stay hidden.`:`<strong>Next layer:</strong> run the Trade Center v10 local enricher. It only publishes a season when recovered completed trades reconcile exactly to ESPN's saved team trade counters.`}</p>
       <div class="transaction-status-row">
-        <span class="badge good">2013–2025 summary counters ready</span>
+        <span class="badge good">Historical + live summary counters</span>
         <span class="badge ${recovered.length?'good':'warn'}">${recovered.length?`${recovered.length} verified packages loaded`:'Package grading not loaded yet'}</span>
         <button class="inline-action" onclick="navigate('live')">Open live ${LIVE_YEAR} activity →</button>
       </div>
@@ -762,7 +765,7 @@ function renderTrades(){
       const draw=()=>{
         const year=Number($('#transactionSeason').value);
         const s=T.seasons.find(x=>x.Season===year);
-        const rows=(DATA?.teams||[])
+        const rows=transactionTeamRows()
           .filter(x=>Number(x.Season)===year)
           .map(x=>({
             TeamID:teamId(x['Team ID']),
