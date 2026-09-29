@@ -123,8 +123,11 @@ export default async function handler(req,res){
       });
     }
 
+    const requestedSeason=Number(req?.query?.season);
+    const season=Number.isInteger(requestedSeason)&&requestedSeason>=2026&&requestedSeason<=Number(LIVE_SEASON)
+      ? requestedSeason:Number(LIVE_SEASON);
     const base=
-      `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${LIVE_SEASON}/segments/0/leagues/${LEAGUE_ID}`;
+      `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${LEAGUE_ID}`;
 
     const headers={
       "User-Agent":"Mozilla/5.0",
@@ -268,7 +271,7 @@ export default async function handler(req,res){
     res.setHeader("Cache-Control","no-store");
 
     return res.status(200).json({
-      season:Number(LIVE_SEASON),
+      season,
       currentWeek,
       selectedWeek,
       availableWeeks,

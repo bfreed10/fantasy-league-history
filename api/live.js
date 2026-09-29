@@ -26,12 +26,23 @@ function playerValue(entry,week){
   const score=s=>Number(s?.appliedTotal ?? s?.appliedStatTotal);
   const valid=s=>(s?.appliedTotal ?? s?.appliedStatTotal)!=null && Number.isFinite(score(s)) && score(s)>=0;
   const projected=stats.find(s=>Number(s.scoringPeriodId)===Number(week) && Number(s.statSourceId)===1 && valid(s));
-  if(projected)return {weeklyValue:score(projected),valueSource:"ESPN weekly projection"};
   const actual=stats.filter(s=>Number(s.statSourceId)===0 && Number(s.scoringPeriodId)>0 && Number(s.scoringPeriodId)<Number(week) && valid(s))
     .sort((a,b)=>Number(a.scoringPeriodId)-Number(b.scoringPeriodId));
   const recent=actual.slice(-3);
-  if(recent.length>=2)return {weeklyValue:recent.reduce((n,s)=>n+score(s),0)/recent.length,valueSource:`Last ${recent.length} completed weeks`};
-  return {weeklyValue:null,valueSource:null};
+  const recentAverage=recent.length>=2?recent.reduce((n,s)=>n+score(s),0)/recent.length:null;
+  const upcoming=stats.filter(s=>Number(s.statSourceId)===1 &&
+    Number(s.scoringPeriodId)>Number(week)&&Number(s.scoringPeriodId)<=Number(week)+4&&valid(s))
+    .sort((a,b)=>Number(a.scoringPeriodId)-Number(b.scoringPeriodId));
+  const futureAverage=upcoming.length>=2?upcoming.reduce((n,s)=>n+score(s),0)/upcoming.length:null;
+  const weeklyValue=projected?score(projected):recentAverage;
+  const rosWeeklyValue=futureAverage!=null
+    ? (recentAverage!=null?futureAverage*.8+recentAverage*.2:futureAverage)
+    : (weeklyValue!=null&&recentAverage!=null?weeklyValue*.55+recentAverage*.45:weeklyValue);
+  return {weeklyValue:weeklyValue??null,rosWeeklyValue:rosWeeklyValue??null,
+    valueSource:futureAverage!=null?`ESPN next ${upcoming.length} weeks + recent form`:
+      projected?(recentAverage!=null?"ESPN projection + recent form":"ESPN weekly projection"):
+      recentAverage!=null?`Last ${recent.length} completed weeks`:null,
+    byeWeek:Number(p.byeWeek)||null};
 }
 
 export default async function handler(req, res) {
@@ -40,7 +51,10 @@ export default async function handler(req, res) {
     const swid = (process.env.SWID || "").trim();
     if (!espnS2 || !swid) return res.status(503).json({error:"Server environment variables ESPN_S2 and SWID are not configured."});
 
-    const base = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${LIVE_SEASON}/segments/0/leagues/${LEAGUE_ID}`;
+    const requestedSeason=Number(req?.query?.season);
+    const season=Number.isInteger(requestedSeason)&&requestedSeason>=2026&&requestedSeason<=Number(LIVE_SEASON)
+      ? requestedSeason:Number(LIVE_SEASON);
+    const base = `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${LEAGUE_ID}`;
     const params = new URLSearchParams();
     ["mTeam","mRoster","mMatchup","mMatchupScore","mSettings","mSchedule","mTransactions2","mDraftDetail"].forEach(v=>params.append("view",v));
     const headers = {"User-Agent":"Mozilla/5.0","Accept":"application/json","Cookie":`espn_s2=${espnS2}; SWID=${swid}`};
@@ -80,7 +94,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
         trades:Number(counter?.trades ?? 0)
       },transactionCountsAvailable:Boolean(counter)});
     }
-    if(currentWeek && rosterOutput.some(t=>t.players.some(p=>p.weeklyValue==null))){
+    if(season===Number(LIVE_SEASON) && currentWeek && rosterOutput.some(t=>t.players.some(p=>p.weeklyValue==null))){
       try{
         const q=new URLSearchParams({scoringPeriodId:String(currentWeek)});
         q.append("view","mBoxscore");
@@ -95,7 +109,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
               if(id!=null)values.set(String(id),playerValue(e,currentWeek));
             }
           for(const team of rosterOutput)for(const player of team.players){
-            if(player.weeklyValue==null && values.get(String(player.playerId))?.weeklyValue!=null)
+            if(player.rosWeeklyValue==null && values.get(String(player.playerId))?.rosWeeklyValue!=null)
               Object.assign(player,values.get(String(player.playerId)));
           }
         }
@@ -104,11 +118,13 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
 
     const status = data.status || {};
     const matchups=[];
+    const completedMatchups=[];
     for(const game of data.schedule || []){
       const week=game.matchupPeriodId;
-      if(currentWeek && week!==currentWeek) continue;
       const home=game.home||{}, away=game.away||{};
-      matchups.push({week,homeTeam:teams[home.teamId]?.name||"",homeOwner:teams[home.teamId]?.owner||"",homeScore:home.totalPoints??null,awayTeam:teams[away.teamId]?.name||"",awayOwner:teams[away.teamId]?.owner||"",awayScore:away.totalPoints??null});
+      const item={id:game.id,week,homeTeamId:home.teamId,awayTeamId:away.teamId,homeTeam:teams[home.teamId]?.name||"",homeOwner:teams[home.teamId]?.owner||"",homeScore:home.totalPoints??null,awayTeam:teams[away.teamId]?.name||"",awayOwner:teams[away.teamId]?.owner||"",awayScore:away.totalPoints??null,winner:game.winner||"UNDECIDED",playoffTierType:game.playoffTierType||"NONE"};
+      if(week===currentWeek)matchups.push(item);
+      if((season<Number(LIVE_SEASON)||week<currentWeek) && home.teamId!=null && away.teamId!=null && ["HOME","AWAY","TIE"].includes(item.winner) && item.homeScore!=null && item.awayScore!=null)completedMatchups.push(item);
     }
 
     let standings=Object.entries(teams).map(([id,t])=>({teamId:Number(id),team:t.name,owner:t.owner,wins:t.wins,losses:t.losses,ties:t.ties,pointsFor:t.pointsFor,pointsAgainst:t.pointsAgainst}));
@@ -164,7 +180,7 @@ const rawDraftPicks = Array.isArray(draftDetail.picks) ? draftDetail.picks : [];
     const transactions=rawTx.map(t=>({date:safeDate(t.processDate||t.proposedDate),team:teams[t.teamId]?.name||"League",type:t.type||"",status:t.status||"",items:(t.items||[]).map(i=>({type:i.type||"",action:i.type||"",playerId:i.playerId,player:playerNames[i.playerId]||`Player ${i.playerId||""}`,fromTeam:teams[i.fromTeamId]?.name||"",toTeam:teams[i.toTeamId]?.name||""}))}));
 
     res.setHeader("Cache-Control","no-store");
-    return res.status(200).json({leagueId:LEAGUE_ID,season:Number(LIVE_SEASON),leagueName:data.name||"",currentWeek,draftPicks,matchups,standings,rosters:rosterOutput,transactions,injuries,updatedAt:new Date().toISOString()});
+    return res.status(200).json({leagueId:LEAGUE_ID,season,leagueName:data.name||"",currentWeek,draftPicks,matchups,completedMatchups,standings,rosters:rosterOutput,transactions,injuries,updatedAt:new Date().toISOString()});
   } catch (error) {
     return res.status(503).json({error:error.message||"Unknown server error"});
   }

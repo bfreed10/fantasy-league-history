@@ -342,7 +342,7 @@ function renderHistory(){
 }
 function renderSeasonTable(){
   const y=Number($('#seasonPick').value);
-  const rows=DATA.teams.filter(x=>Number(x.Season)===y).sort((a,b)=>(a['Final Rank']??99)-(b['Final Rank']??99)).map(x=>`<tr><td>${esc(x['Final Rank'])}</td><td>${displayFranchise(x['Team ID'],x['Team Name'],x['Owner(s)'])}</td><td>${esc(x.Wins)}-${esc(x.Losses)}-${esc(x.Ties)}</td><td>${fmt(x['Points For'],2)}</td><td>${fmt(x['Points Against'],2)}</td><td>${esc(x['Playoff Seed'])}</td></tr>`);
+  const rows=DATA.teams.filter(x=>Number(x.Season)===y).sort((a,b)=>(a['Final Rank']??a['Playoff Seed']??99)-(b['Final Rank']??b['Playoff Seed']??99)).map(x=>`<tr><td>${esc(x['Final Rank']??'In progress')}</td><td>${displayFranchise(x['Team ID'],x['Team Name'],x['Owner(s)'])}</td><td>${esc(x.Wins)}-${esc(x.Losses)}-${esc(x.Ties)}</td><td>${fmt(x['Points For'],2)}</td><td>${fmt(x['Points Against'],2)}</td><td>${esc(x['Playoff Seed'])}</td></tr>`);
   $('#seasonTable').innerHTML=table(['Finish','Team / Manager','Record','PF','PA','Seed'],rows);
 }
 
@@ -569,7 +569,10 @@ function renderDraft(){
 
 
 function transactionTeamRows(){
-  return [...(DATA?.teams||[]),...(window.liveTransactionTeams||[])];
+  const rows=new Map();
+  for(const x of DATA?.teams||[])rows.set(`${x.Season}|${x['Team ID']}`,x);
+  for(const x of window.liveTransactionTeams||[])rows.set(`${x.Season}|${x['Team ID']}`,x);
+  return [...rows.values()];
 }
 function transactionSummary(){
   const seasonMap=new Map(), franchiseMap=new Map();
@@ -1205,9 +1208,59 @@ function navigate(page){
 }
 document.querySelectorAll('nav button').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 
+function applyLiveHistory(snapshot){
+  const season=Number(snapshot?.season);
+  if(!Number.isInteger(season)||!Array.isArray(snapshot?.completedMatchups))return;
+  (window.liveHistorySnapshots??={})[season]=snapshot;
+  if(DATA.teams.some(x=>Number(x.Season)===season))return; // Saved season is authoritative.
+  const completed=snapshot.completedMatchups.map(g=>({
+    Season:season,Week:Number(g.week),'Matchup ID':g.id,
+    'Playoff Tier':g.playoffTierType||'NONE',Winner:g.winner,
+    'Home Team ID':Number(g.homeTeamId),'Home Team':g.homeTeam,'Home Score':Number(g.homeScore),
+    'Away Team ID':Number(g.awayTeamId),'Away Team':g.awayTeam,'Away Score':Number(g.awayScore),
+    'Home Owner':g.homeOwner,'Away Owner':g.awayOwner,
+    Margin:Math.abs(Number(g.homeScore)-Number(g.awayScore))
+  }));
+  DATA.matchups.push(...completed);
+  const counters=new Map((snapshot.rosters||[]).map(t=>[Number(t.teamId),t]));
+  for(const [rank,t] of (snapshot.standings||[]).entries()){
+    const counter=counters.get(Number(t.teamId));
+    DATA.teams.push({Season:season,'Team ID':t.teamId,'Team Name':t.team,'Owner(s)':t.owner,
+      'Final Rank':null,'Playoff Seed':rank+1,Wins:t.wins,Losses:t.losses,Ties:t.ties,
+      'Points For':t.pointsFor,'Points Against':t.pointsAgainst,
+      Acquisitions:counter?.transactionCountsAvailable?counter.transactionCounts.acquisitions:0,
+      Drops:counter?.transactionCountsAvailable?counter.transactionCounts.drops:0,
+      Trades:counter?.transactionCountsAvailable?counter.transactionCounts.trades:0});
+  }
+  DATA.draft.push(...(snapshot.draftPicks||[]).map(p=>({
+    Season:season,Round:p.round,'Pick in Round':p.roundPick,'Overall Pick':p.overallPick,
+    'Team ID':p.teamId,'Team Name':p.team,'Player ID':p.playerId,'Player Name':p.player,
+    Keeper:p.keeper,'Actual Season Points (partial)':null
+  })));
+  const recordRow=g=>({season:g.Season,week:g.Week,homeTeam:g['Home Team'],awayTeam:g['Away Team'],
+    homeOwner:g['Home Owner'],awayOwner:g['Away Owner'],homeScore:g['Home Score'],awayScore:g['Away Score'],
+    combined:g['Home Score']+g['Away Score'],margin:g.Margin,
+    highScore:Math.max(g['Home Score'],g['Away Score']),lowScore:Math.min(g['Home Score'],g['Away Score'])});
+  const rows=completed.map(recordRow);
+  DATA.records.highestScores.push(...rows);
+  DATA.records.highestScores.sort((a,b)=>b.highScore-a.highScore);
+  DATA.records.biggestBlowouts.push(...rows);
+  DATA.records.biggestBlowouts.sort((a,b)=>b.margin-a.margin);
+  DATA.records.closestGames.push(...rows);
+  DATA.records.closestGames.sort((a,b)=>a.margin-b.margin);
+  DATA.seasons.push({Season:season,'League Name':snapshot.leagueName,Teams:(snapshot.standings||[]).length,
+    'Schedule Entries':completed.length,'Current Matchup Period':snapshot.currentWeek,
+    'Final Scoring Period':null,Active:true});
+}
+
 (async()=>{
   try{
     DATA=await fetch('/data/history_SAFE_MERGED_v10_4.json').then(r=>r.json());
+    const archived=new Set(DATA.teams.map(x=>Number(x.Season)));
+    const pending=[];
+    for(let year=2026;year<=LIVE_YEAR;year++)if(!archived.has(year))
+      pending.push(fetch(`/api/live?season=${year}`).then(r=>r.ok?r.json():null).then(applyLiveHistory));
+    await Promise.allSettled(pending);
     navigate('home');
   }catch(e){
     $('#content').innerHTML=`<div class="empty">Could not load league history: ${esc(e.message)}</div>`;

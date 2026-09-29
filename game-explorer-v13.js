@@ -138,7 +138,42 @@ window.LFL_GAME_EXPLORER_VERSION = "v13.0";
         if (!r.ok) throw new Error(`Game data HTTP ${r.status}`);
         return r.json();
       })
-      .then(data => {
+      .then(async data => {
+        const snapshots=Object.values(window.liveHistorySnapshots||{});
+        for(const snapshot of snapshots){
+          const season=Number(snapshot.season);
+          if(data.games.some(g=>g.s===season))continue;
+          const completed=snapshot.completedMatchups||[];
+          const weeks=[...new Set(completed.map(g=>Number(g.week)))].sort((a,b)=>a-b);
+          for(const week of weeks){
+            try{
+              const response=await fetch(`/api/boxscore?season=${season}&week=${week}`);
+              if(!response.ok)continue;
+              const box=await response.json();
+              for(const m of box.matchups||[]){
+                const verified=completed.find(g=>Number(g.week)===week && Number(g.homeTeamId)===m.homeTeamId && Number(g.awayTeamId)===m.awayTeamId);
+                if(!verified)continue;
+                const key=`${season}-${week}-${m.id}`;
+                const players=[];
+                for(const [sd,side] of [['home',m.boxscore?.home],['away',m.boxscore?.away]])
+                  for(const p of side?.players||[])players.push({sd,tid:side.teamId,id:p.playerId,n:p.player,p:p.position,
+                    ls:p.slot,lid:0,lr:p.slot==='IR',st:p.starter,pts:p.points,pr:p.projectedPoints,inj:p.injuryStatus||'',stat:''});
+                const starterTotal=side=>players.filter(p=>p.sd===side&&p.st&&p.pts!=null).reduce((n,p)=>n+Number(p.pts),0);
+                const hasBoth=players.some(p=>p.sd==='home'&&p.st)&&players.some(p=>p.sd==='away'&&p.st);
+                const validated=hasBoth&&Math.abs(starterTotal('home')-Number(verified.homeScore))<.15&&
+                  Math.abs(starterTotal('away')-Number(verified.awayScore))<.15;
+                const cov=validated?(players.some(p=>!p.st)?'Full Lineup + Bench':'Verified Starters Only'):
+                  (players.length?'Partial / Needs Review':'Matchup Only');
+                data.games.push({k:key,s:season,w:week,m:m.id,pt:m.playoffTierType||'NONE',win:m.winner,cov,
+                  h:{id:m.homeTeamId,n:m.homeTeam,sc:verified.homeScore,ss:verified.homeScore,bp:null},
+                  a:{id:m.awayTeamId,n:m.awayTeam,sc:verified.awayScore,ss:verified.awayScore,bp:null}});
+                data.players[key]=players;
+              }
+            }catch(_){/* Other completed weeks remain usable. */}
+          }
+        }
+        data.meta.games=data.games.length;
+        data.meta.playerRows=Object.values(data.players).reduce((n,x)=>n+x.length,0);
         boxData = data;
         return data;
       });
