@@ -90,6 +90,24 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     return "";
   }
 
+  // Availability is season-specific: today's injury status cannot classify an old draft.
+  function healthySeason(row) {
+    const season = n(row.s ?? row.Season);
+    const id = n(row.pid ?? row["Player ID"]);
+    const injury = (DATA?.injuryAnalytics?.players || []).find(p =>
+      n(p.Season) === season && n(p.PlayerId ?? p["Player ID"]) === id);
+    return Boolean(injury && n(injury.FantasyEndWeek) > 0 &&
+      n(injury.EligibleFantasySeasonGames) >= n(injury.FantasyEndWeek) - 1 &&
+      !(injury.RosterStatuses || []).some(status => ["RES", "IR", "PUP", "INJURED_RESERVE"].includes(status)) &&
+      n(injury.GamesMissed) === 0 && n(injury.InjuryGamesMissed) === 0 &&
+      n(injury.GamesPlayed) >= n(injury.EligibleFantasySeasonGames));
+  }
+
+  function performanceBust(row) {
+    return healthySeason(row) && n(row.DraftValuePercentile ?? row.dv) != null &&
+      n(row.DraftValuePercentile ?? row.dv) <= 10;
+  }
+
   function loadV141() {
     if (V141) return Promise.resolve(V141);
     if (loadPromise) return loadPromise;
@@ -167,7 +185,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       .slice(0, 75);
 
     A.topBusts = [...corrected]
-      .filter(p => n(p.DraftValuePercentile) != null)
+      .filter(performanceBust)
       .sort((a, b) => n(a.DraftValuePercentile) - n(b.DraftValuePercentile))
       .slice(0, 75);
 
@@ -270,7 +288,9 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     }
 
     const best = [...rows].sort((a, b) => n(b.ped) - n(a.ped)).slice(0, 15);
-    const worst = [...rows].sort((a, b) => n(a.ped) - n(b.ped)).slice(0, 15);
+    const worst = rows.filter(row => healthySeason(row) && n(row.pep) > 0 &&
+      n(row.ped) <= -35 && n(row.pea) <= n(row.pep) * 0.75)
+      .sort((a, b) => n(a.ped) - n(b.ped)).slice(0, 15);
 
     const make = (list, good) => list.map((row, index) => `
       <tr>
@@ -290,7 +310,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
           ${table14(["#","Player","Actual Season Pts","ESPN Preseason Expected","Beat By","Drafted By"], make(best, true))}
         </div>
         <div class="card">
-          <h2>Most Below Preseason Expectation</h2>
+          <h2>Biggest Busts vs Preseason Expectation</h2><p class="muted">Verified full availability; at least 35 points and 25% below ESPN preseason expectation. Injury-shortened and unverified seasons are excluded.</p>
           ${table14(["#","Player","Actual Season Pts","ESPN Preseason Expected","Missed By","Drafted By"], make(worst, false))}
         </div>
       </div>
@@ -305,7 +325,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     );
 
     const best = [...rows].sort((a, b) => n(b.dv) - n(a.dv)).slice(0, 15);
-    const worst = [...rows].sort((a, b) => n(a.dv) - n(b.dv)).slice(0, 15);
+    const worst = rows.filter(performanceBust).sort((a, b) => n(a.dv) - n(b.dv)).slice(0, 15);
 
     const make = list => list.map((row, index) => `
       <tr>
@@ -326,7 +346,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
           ${table14(["#","Player","Season Pts","Draft Value %ile","Label","Comparables","Drafted By"], make(best))}
         </div>
         <div class="card">
-          <h2>Worst Draft Outcomes</h2>
+          <h2>Biggest Performance Busts</h2><p class="muted">Bottom 10% for position and draft round, with verified full availability. Injury-shortened and unverified seasons are excluded.</p>
           ${table14(["#","Player","Season Pts","Draft Value %ile","Label","Comparables","Drafted By"], make(worst))}
         </div>
       </div>
@@ -418,8 +438,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       <div class="draft-v141-head">
         <div>
           <span class="section-eyebrow">DRAFT VALUE 2.2 • v14.2</span>
-          <h2>Expected points now means ESPN preseason season projection.</h2>
-          <p>Draft expectation now uses ESPN's stored preseason full-season projection. Relative draft outcome and manager-realized production remain separate metrics.</p>
+          <h2>Historical Draft Results • ${esc14(V141.meta.seasons)}</h2>
+          <p>These are completed-season grades through 2025, not current player or trade values. Bust lists exclude injury-shortened seasons and require substantial underperformance. Current-season ESPN draft boards appear separately above.</p>
         </div>
         <span class="badge good">${fmt14(V141.meta.draftValueCoveragePct, 2)}% draft-value coverage</span>
       </div>
@@ -520,7 +540,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
       const hero = [...content.querySelectorAll(".hero p")]
         .find(p => p.textContent.includes("Slot Value =") || p.textContent.includes("Draft Value"));
       if (hero) {
-        hero.innerHTML = `<strong>Expected Points = ESPN preseason full-season projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate.`;
+        hero.innerHTML = `<strong>Expected Points = ESPN preseason full-season projection only.</strong> Draft Value is a separate 0–100 percentile based on how a player performed relative to other LFL picks at the same position and draft round. It is not an expected-points estimate. <strong>Biggest Performance Busts</strong> requires a bottom-10% result and verified full availability in the season shown; injury-shortened or unverified seasons are excluded.`;
       }
 
       if (!panel) return;
@@ -530,9 +550,9 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
         if (h2) {
           const heading = h2.textContent.trim();
           if (heading === "Biggest Steals") h2.textContent = "Best Draft Outcomes";
-          if (heading === "Biggest Slot-Value Busts") h2.textContent = "Worst Draft Outcomes";
+          if (heading === "Biggest Slot-Value Busts") h2.textContent = "Biggest Performance Busts";
           if (heading === "Best Drafting Franchises by Average Pick Value") h2.textContent = "Best Drafting Franchises by Avg Draft Value Score";
-          if (heading === "Worst Slot Outcomes") h2.textContent = "Worst Draft Outcomes";
+          if (heading === "Worst Slot Outcomes") h2.textContent = "Biggest Performance Busts";
         }
       }
 
@@ -630,6 +650,7 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
         }
       })
       .catch(error => {
+        if (DATA?.draftAnalytics) DATA.draftAnalytics.topBusts = [];
         console.error("Draft Value v14.2 failed to load", error);
         baseDraftPage();
         if (typeof setStatus === "function") {
