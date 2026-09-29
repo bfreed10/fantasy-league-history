@@ -12,7 +12,9 @@
           if (p.playerId == null) continue;
           const id = String(p.playerId);
           if (!history.has(id)) history.set(id, new Map());
-          history.get(id).set(Number(box.selectedWeek), p);
+          const prior=history.get(id).get(Number(box.selectedWeek));
+          history.get(id).set(Number(box.selectedWeek), {...prior,...p,
+            projectedPoints:num(p.projectedPoints) ?? num(prior?.projectedPoints)});
         }
       }
     }
@@ -52,7 +54,7 @@
     root.innerHTML = '<h2>Current-Season Draft Performance</h2><p class="muted">Loading completed-week ESPN results…</p>';
     content.prepend(root);
     try {
-      const live = await json('/api/live');
+      const live = await json('/api/draft-performance').catch(()=>json('/api/live'));
       const weeks = [...new Set((live.completedMatchups || []).map(g=>Number(g.week)))].sort((a,b)=>a-b);
       const boxes = [], failed = [];
       // Limit concurrent ESPN requests and retain coverage when one week fails.
@@ -62,6 +64,7 @@
         results.forEach((r,i)=>r.status==='fulfilled'?boxes.push(r.value):failed.push(group[i]));
       }
       if (!root.isConnected) return;
+      boxes.push(...(live.playerHistoryBoxes || []));
       const rows = summarize(live,boxes);
       const fmt = v => num(v)==null?'—':Number(v).toFixed(1);
       const cells = list => list.map(p=>`<tr><td>#${safe(p.overallPick)}</td><td>${safe(p.player)}<br><small>${safe(p.position)}</small></td><td>${safe(p.team)}</td><td>${fmt(p.actual)}</td><td>${fmt(p.expected)}</td><td>${fmt(p.pairedActual)}</td><td class="${p.delta<0?'bad':'good'}">${p.delta>0?'+':''}${fmt(p.delta)}</td><td>${p.observed}/${p.totalWeeks} actual • ${p.paired}/${p.totalWeeks} paired</td><td>${safe(p.status)}</td></tr>`).join('');
@@ -70,7 +73,8 @@
       root.innerHTML=`<span class="section-eyebrow">LIVE ESPN • ${safe(live.season)}</span><h2>Current-Season Draft Performance</h2>
         <p class="muted">Completed weeks: ${weeks.length?weeks.map(w=>`W${w}`).join(', '):'none yet'}. Updated ${safe(live.updatedAt)}. Reload this page for the latest results.</p>
         <p>Difference compares actual points with ESPN weekly projections for the same completed weeks. Includes bench points and points after trades. These are season-to-date results, not full-season grades.</p>
-        <p class="muted">Coverage follows ESPN league roster history. Weeks after a player leaves all league rosters may be missing; missing data is never scored as zero. Injury status is current, not a historical injury report.</p>
+        <p class="muted">ESPN player-history stats fill gaps after players leave league rosters; roster box scores provide fallback coverage. Any remaining missing weeks are never scored as zero. Injury status is current, not a historical injury report.</p>
+        ${(live.historyWarnings||[]).length?`<p class="warn">${safe(live.historyWarnings.join(" "))}</p>`:""}
         ${failed.length?`<p class="bad">Could not load W${failed.join(', W')}. Results below are partial.</p>`:''}
         <label>Drafting team <select id="currentDraftTeam"><option value="">All teams</option>${[...new Map(rows.map(p=>[p.teamId,p.team])).entries()].map(([id,name])=>`<option value="${safe(id)}">${safe(name)}</option>`).join('')}</select></label>
         <div id="currentDraftRows">${grid(rows)}</div>

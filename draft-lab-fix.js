@@ -96,6 +96,8 @@ window.LFL_DRAFT_LAB_FIX_VERSION = "v14.2";
     const id = n(row.pid ?? row["Player ID"]);
     const injury = (DATA?.injuryAnalytics?.players || []).find(p =>
       n(p.Season) === season && n(p.PlayerId ?? p["Player ID"]) === id);
+    const audited = injury && window.LFLInjuryAudit?.auditRow(injury);
+    if (audited && (!audited.AvailabilityVerified || audited.SupportedInjuryGamesMissed > 0)) return false;
     return Boolean(injury && n(injury.FantasyEndWeek) > 0 &&
       n(injury.EligibleFantasySeasonGames) >= n(injury.FantasyEndWeek) - 1 &&
       !(injury.RosterStatuses || []).some(status => ["RES", "IR", "PUP", "INJURED_RESERVE"].includes(status)) &&
